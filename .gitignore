@@ -1,0 +1,27 @@
+# secrets — KABHI commit mat karo
+.env
+*.session
+*.session-journal
+
+# runtime data
+id_store_db.json
+id_store_db.json.*
+backups/
+uploads/
+.tmp/
+logs/
+*.log
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

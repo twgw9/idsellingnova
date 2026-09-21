@@ -1,0 +1,12 @@
+# Telegram MTProto client (bot framework)
+pyrogram>=2.0.106
+tgcrypto>=1.2.5          # fast AES — pyrogram ke liye recommended
+
+# HTTP calls (supplier API)
+requests>=2.31.0
+
+# async file IO (backups / uploads)
+aiofiles>=23.2.1
+
+# ---- dev / testing (optional) ----
+# pyflakes>=3.2.0
