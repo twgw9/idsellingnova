@@ -5,9 +5,13 @@ har module me set karna padta hai (functions apne module ke globals se
 resolve hote hain). `patch_global()` ye sab khud kar deta hai.
 """
 import asyncio
+import json
 import os
 import shutil
 import sys
+
+# ⚠️  Tests kabhi bhi asli number na kharidein — .env me DRY_RUN=false ho to bhi
+os.environ["TGSHARK_DRY_RUN"] = "true"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -15,6 +19,7 @@ if ROOT not in sys.path:
 os.chdir(ROOT)
 
 import bot                      # noqa: E402  (package import => handlers register)
+patch_dry = True
 from bot import *               # noqa: E402,F401,F403  (submodules)
 from bot.startup import *       # noqa: E402,F401,F403  (sab functions/consts)
 
@@ -44,12 +49,37 @@ def use_temp_db(path):
     live = os.path.join(ROOT, "id_store_db.json")
     if os.path.exists(live):
         shutil.copyfile(live, path)
-        return path
-    # fresh clone: bot ke defaults se DB banao + demo stock seed karo
-    asyncio.run(load_db())
-    seed_demo_stock()
-    asyncio.run(save_db())
+    else:
+        # fresh clone: bot ke defaults se DB banao + demo stock seed karo
+        asyncio.run(load_db())
+        seed_demo_stock()
+        asyncio.run(save_db())
+    _pin_test_config(path)
     return path
+
+
+def _pin_test_config(path):
+    """Test DB me fixed values — aapki .env (usd_inr=100, dry_run=false) wagera
+    test expectations ko hila na dein, isliye yahan pin kar dete hain."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        tg = data.setdefault("tgshark", {})
+        tg["usd_inr"] = 88.0          # suites isi rate par likhe gaye hain
+        tg["dry_run"] = True          # kabhi asli number kharida hi na jaye
+        data["announce_channel"] = None   # test me koi real channel post na ho
+        data["proof_channel"] = None
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+    except Exception:
+        pass
+    # stored prices bhi pinned rate ke hisaab se dobara banao
+    try:
+        asyncio.run(load_db())
+        asyncio.run(recalc_all_prices())
+        asyncio.run(save_db())
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------- demo seed data

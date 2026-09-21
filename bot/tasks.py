@@ -120,9 +120,16 @@ async def tg_sync_stock():
     srv = get_server(code)
     if not srv:
         return 0, "❌ API server not found (create server 1 first: /addserver)"
+    if not api_key_ok():
+        return 0, api_key_missing_msg()
     res = await tg_api("getCountrys")
     if res.get("status") != "ok":
-        return 0, f"❌ API error: {esc(res.get('message', 'unknown'))}"
+        msg = str(res.get("message", "unknown"))
+        hint = ""
+        if "apikey" in msg.lower() or "unauthor" in msg.lower():
+            hint = (" — key galat/expired lag rahi hai: .env me TGSHARK_API_KEY check karo "
+                    "ya bot me /setapikey &lt;nayi key&gt;")
+        return 0, f"❌ API error: {esc(msg)}{hint}"
     countries = res.get("countries") or []
     added = updated = 0
     for c in countries:

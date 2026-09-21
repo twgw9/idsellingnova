@@ -19,6 +19,28 @@ from .config import *
 from .db import *
 from .emoji import *
 
+def norm_tiers(tiers):
+    """Profit tiers ko hamesha dict-form me lao — dono format chalte hain.
+
+      dict → {"upto": 30, "add": 5}  /  {"upto": 100, "pct": 10, "min_add": 5}
+      list → [upto, value, min_add]   (min_add > 0 ho to % rule, warna flat ₹)
+    """
+    out = []
+    for t in (tiers or []):
+        if isinstance(t, dict):
+            out.append(t)
+        elif isinstance(t, (list, tuple)) and len(t) >= 2:
+            upto = float(t[0])
+            val = float(t[1])
+            min_add = float(t[2]) if len(t) > 2 else 0.0
+            if min_add > 0:                       # % rule with minimum profit
+                out.append({"upto": upto, "pct": val, "min_add": min_add})
+            else:                                 # flat ₹ add
+                out.append({"upto": upto, "add": val})
+    out.sort(key=lambda d: float(d.get("upto", 0) or 0))
+    return out
+
+
 def tg_cfg():
     c = db.get("tgshark") or {}
     return {
@@ -34,7 +56,7 @@ def tg_cfg():
         "max_price": int(c.get("max_price", TGSHARK_MAX_PRICE) or 0),
         "charm": bool(c.get("charm", TGSHARK_CHARM)),
         "margins": c.get("margins") or {},
-        "tiers": c.get("tiers") or TGSHARK_PROFIT_TIERS,
+        "tiers": norm_tiers(c.get("tiers") or TGSHARK_PROFIT_TIERS),
     }
 
 
@@ -85,12 +107,14 @@ def apply_rounding(raw):
     c = tg_cfg()
     r = c["round_to"]
     mode = (c.get("round_mode") or "ceil").lower()
+    raw = round(float(raw), 6)          # 55.00000000000001 jaise float noise se bachao
+    eps = 1e-9
     if mode == "nearest":
         val = int(round(raw / r) * r)
     elif mode == "floor":
-        val = int(math.floor(raw / r) * r)
+        val = int(math.floor(raw / r + eps) * r)
     else:
-        val = int(math.ceil(raw / r) * r)
+        val = int(math.ceil(raw / r - eps) * r)
     if c.get("charm") and val >= 10:
         val -= 1                       # ₹49 / ₹99 style
     if c.get("max_price", 0):

@@ -63,10 +63,13 @@ async def post_start_init():
         changed = True
         logging.info("First run — Server 1 created as the LIVE supplier server.")
     if not db["tgshark"].get("tiers_v61"):
-        db["tgshark"]["tiers"] = json.loads(json.dumps(TGSHARK_PROFIT_TIERS))
+        db["tgshark"]["tiers"] = norm_tiers(TGSHARK_PROFIT_TIERS)
         db["tgshark"]["tiers_v61"] = True
         changed = True
         logging.info("Profit rule updated: ₹0-30 → +₹5 • ₹30-100 → 10%% (min ₹5) • ₹100+ → +₹15")
+    if not api_key_ok():
+        logging.warning("⚠️  Supplier API key set nahi hai (.env me TGSHARK_API_KEY) — "
+                        "stock sync tab tak nahi hoga.")
     code = tg_cfg()["server_code"]
     srv = get_server(code)
     if srv and not srv.get("source"):

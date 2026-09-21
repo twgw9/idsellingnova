@@ -42,7 +42,10 @@ def env(key, default=None):
 
 def env_int(key, default):
     try:
-        return int(env(key, default))
+        raw = str(env(key, default)).strip()
+        if "," in raw:          # "38818444,8316804598" — API_ID sirf ek hota hai, pehla lo
+            raw = raw.split(",")[0].strip()
+        return int(raw)
     except (TypeError, ValueError):
         return default
 
@@ -105,10 +108,9 @@ MULTI_API_CREDENTIALS = env_json(
 
 # ------------------------------------------------------------ Live supply
 TGSHARK_BASE = env("TGSHARK_BASE", "https://tgsharkapi.store/api/v1")
-TGSHARK_API_KEY = env(
-    "TGSHARK_API_KEY",
-    "tgsharkapi-wWW-KCaqrq-6kxLibXCOxY0XXI9J5MNmgKeSX8woHANFJ2EIO_P11Q",
-)
+# ⚠️  Supplier key kabhi code me mat rakho — .env me daalo (GitHub par commit na ho).
+#     Khali chhodoge to bot clear error dega: "Supplier API key set nahi hai".
+TGSHARK_API_KEY = env("TGSHARK_API_KEY", "")
 
 TGSHARK_PROFIT_PCT = env_float("TGSHARK_PROFIT_PCT", 10.0)   # fallback flat %
 TGSHARK_USD_INR = env_float("TGSHARK_USD_INR", 88.0)         # 1 USD = ₹88

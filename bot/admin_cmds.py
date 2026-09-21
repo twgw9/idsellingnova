@@ -669,7 +669,7 @@ async def cmd_settiers(client, message):
     arg = (message.matches[0].group(1) or "").strip().lower()
     if arg == "reset":
         old_map = price_snapshot()
-        db["tgshark"]["tiers"] = json.loads(json.dumps(TGSHARK_PROFIT_TIERS))
+        db["tgshark"]["tiers"] = norm_tiers(TGSHARK_PROFIT_TIERS)
         await save_db()
         await tg_sync_stock()
         changes = await recalc_all_prices("profit tiers reset", old_map)
@@ -684,8 +684,9 @@ async def cmd_settier_off(client, message):
     """Koi slab hata do: /settier 50 off"""
     upto = float(message.matches[0].group(1))
     old_map = price_snapshot()
-    tiers = [t for t in (db["tgshark"].get("tiers") or []) if float(t.get("upto", 0)) != upto]
-    if len(tiers) == len(db["tgshark"].get("tiers") or []):
+    cur = norm_tiers(db["tgshark"].get("tiers"))
+    tiers = [t for t in cur if float(t.get("upto", 0)) != upto]
+    if len(tiers) == len(cur):
         return await message.reply_text(f"{E('cross')} Koi slab ₹{upto:.0f} par nahi hai.")
     db["tgshark"]["tiers"] = tiers
     await save_db()
@@ -707,7 +708,7 @@ async def cmd_settier(client, message):
     entry = {"upto": upto, "pct": val} if is_pct else {"upto": upto, "add": val}
     if is_pct and min_add:
         entry["min_add"] = min_add
-    tiers = [t for t in (db["tgshark"].get("tiers") or []) if float(t.get("upto", 0)) != upto]
+    tiers = [t for t in norm_tiers(db["tgshark"].get("tiers")) if float(t.get("upto", 0)) != upto]
     tiers.append(entry)
     tiers.sort(key=lambda t: t["upto"])
     db["tgshark"]["tiers"] = tiers

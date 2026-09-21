@@ -88,6 +88,20 @@ def _tg_http(params):
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 
+def api_key_ok():
+    """Supplier key set hai (placeholder/galat nahi)?"""
+    k = (tg_cfg()["api_key"] or "").strip()
+    if not k:
+        return False
+    up = k.upper()
+    return "XXXX" not in up and "PASTE" not in up and "REPLACE" not in up and "YOUR_" not in up
+
+
+def api_key_missing_msg():
+    return ("❌ Supplier API key set nahi hai — .env me <code>TGSHARK_API_KEY=...</code> "
+            "daalo ya bot me <code>/setapikey &lt;key&gt;</code> chalo.")
+
+
 async def tg_api(action, **params):
     """TGShark call — hamesha dict return (kabhi raise nahi karta)."""
     p = {"apiKey": tg_cfg()["api_key"], "action": action}

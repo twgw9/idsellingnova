@@ -141,6 +141,9 @@ ADMIN_COMMANDS = USER_COMMANDS + [
     BotCommand("setmenu", "Force-refresh command menu"),
 ]
 
+_peer_warned = set()          # jin admins ke liye PEER_ID_INVALID log ho chuka hai
+
+
 async def _try_set_admin_commands(uid):
     """Admin ka chat-scope command menu set karne ki SAFE try (PEER_ID_INVALID-safe)."""
     try:
@@ -152,8 +155,12 @@ async def _try_set_admin_commands(uid):
         s = str(e)
         if "PEER_ID_INVALID" in s or "PEER_ID_NOT_FOUND" in s:
             _admin_menu_pending.add(uid)
-            logging.info("Admin %s: DM peer abhi nahi bana (PEER_ID_INVALID) — "
-                         "nudge DM ke baad /start par menu auto-set hoga.", uid)
+            if uid not in _peer_warned:            # sirf ek baar log — spam nahi
+                _peer_warned.add(uid)
+                logging.info("Admin %s: DM peer abhi nahi bana (PEER_ID_INVALID) — "
+                             "nudge DM ke baad /start par menu auto-set hoga.", uid)
+            else:
+                logging.debug("Admin %s: abhi tak DM peer nahi bana.", uid)
         else:
             logging.warning("set admin commands for %s: %s", uid, e)
         return False
