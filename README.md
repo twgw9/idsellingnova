@@ -18,8 +18,13 @@ tools/           ← static checker
 
 - **Do servers, dono live** — `Server 1 • New Accounts` (**supplier inventory server=1**) aur
   `Server 2 • Aged Accounts` (**server=2** — asli aged catalog: `INDIA 2021`, `LK 2020` …).
-  Ek hi API key se dono chalte hain. `getCountrys&server=2` khali aaye to
-  **apne aap default inventory par fallback** ho jata hai (stock kabhi blank nahi hoga).
+  Ek hi API key se dono chalte hain.
+  **Server 2 me SIRF asli aged accounts** — normal/new stock kabhi mix nahi hota
+  (na list me, na delivery me). Aged pool khali ho to bot inventory servers **2..8
+  auto-scan** karta hai: API me jitne bhi aged accounts hain (jaise `INDIA 2021`,
+  `LK 2020`, `XX` mix), sab khud-ba-khud dikh jate hain — **+15% aged premium** ke saath.
+  Live example: `🕰 Aged Mix (Old Accounts)` ₹55 (44 numbers, cost ₹39.6 → profit ₹15).
+  Aged pool khali → server par “currently out of stock”, stale entries apne aap delete.
   Mapping badlo: `/settgserver s2 2`
 - **Aged server me zyada profit** — Server 2 par auto **+25% premium margin**
   (`AGED_UPLIFT_PCT`), badlo: `/setservermargin s2 40%` / `s2 +30` / `s2 off`

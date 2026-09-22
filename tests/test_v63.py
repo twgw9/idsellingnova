@@ -194,8 +194,16 @@ async def main():
     check("s1 ne server=1 mangwaya", ("getCountrys", 1) in calls, str(calls[:4]))
     check("s2 ne server=2 (aged) mangwaya", ("getCountrys", 2) in calls)
     check("s2 me AGED countries aaye",
+          {"IN2021", "LK2020"}.issubset(set(db["servers"]["s2"]["countries"])),
+          str(list(db["servers"]["s2"]["countries"])))
+    check("aged entries flagged",
+          all(db["servers"]["s2"]["countries"][i].get("aged") for i in ("IN2021", "LK2020")))
+    check("s2 me SIRF aged pool (normal mix nahi)",
           set(db["servers"]["s2"]["countries"]) == {"IN2021", "LK2020"},
           str(list(db["servers"]["s2"]["countries"])))
+    check("aged me normal country nahi aaya",
+          "BD" not in db["servers"]["s2"]["countries"]
+          and "MM" not in db["servers"]["s2"]["countries"])
     check("s1 me normal countries", "BD" in db["servers"]["s1"]["countries"])
     check("aged flag on", db["servers"]["s2"].get("tg_server_ok") is True)
 
@@ -205,17 +213,50 @@ async def main():
           str([c for c in calls if c[0] == "getNumber"]))
     db["tgshark"]["dry_run"] = True
 
-    async def spy4(action, key=None, **pr):               # aged catalog fail ho to?
-        if action == "getCountrys" and pr.get("server") == 2:
-            return {"status": "error", "message": "no aged stock"}
+    # --- aged pool khali ho to NORMAL stock mix NA ho, stale entries hat jayein
+    async def spy4(action, key=None, **pr):
+        if action == "getCountrys" and (pr.get("server") or 1) >= 2:
+            return {"status": "ok", "success": True, "countries": []}
         return await fake_tg_api(action, key=key, **pr)
 
     patch_global("tg_api", spy4)
     await bot.tg_sync_all()
-    check("aged fail par fallback (stock phir bhi dikhe)",
-          len(db["servers"]["s2"]["countries"]) > 0,
+    check("aged khali → normal stock mix NAHI hua",
+          len(db["servers"]["s2"]["countries"]) == 0,
           f"{len(db['servers']['s2']['countries'])} countries")
-    check("fallback flag off", db["servers"]["s2"].get("tg_server_ok") is False)
+    check("aged khali → stale entries hat gayi",
+          "IN2021" not in db["servers"]["s2"]["countries"])
+    check("flag off", db["servers"]["s2"].get("tg_server_ok") is False)
+
+    # --- AUTO-SCAN: aged pool kisi aur inventory server par mila to khud pakad lo
+    async def spy5(action, key=None, **pr):
+        if action == "getCountrys" and pr.get("server") == 4:
+            return {"status": "ok", "success": True, "countries": AGED}
+        if action == "getCountrys" and (pr.get("server") or 1) >= 2:
+            return {"status": "ok", "success": True, "countries": []}
+        return await fake_tg_api(action, key=key, **pr)
+
+    patch_global("tg_api", spy5)
+    await bot.tg_sync_all()
+    check("aged pool auto-detect hua (server 4)",
+          db["servers"]["s2"].get("tg_server") == 4, str(db["servers"]["s2"].get("tg_server")))
+    check("auto-scan se aged countries aa gaye",
+          set(db["servers"]["s2"]["countries"]) == {"IN2021", "LK2020"},
+          str(list(db["servers"]["s2"]["countries"])))
+    db["servers"]["s2"]["tg_server"] = 2
+
+    # --- BUG FIX: aged buy fail ho to NORMAL number kharidna hi nahi
+    async def spy6(action, key=None, **pr):
+        if action == "getNumber" and (pr.get("server") or 1) >= 2:
+            return {"status": "error", "message": "no stock"}     # aged out
+        return await fake_tg_api(action, key=key, **pr)
+
+    db["tgshark"]["dry_run"] = False
+    patch_global("tg_api", spy6)
+    strict_buy = await bot.api_buy_number("IN2021", server=2, strict=True)
+    check("aged out-of-stock → normal number NAHI kharida",
+          strict_buy.get("ok") is False, str(strict_buy))
+    db["tgshark"]["dry_run"] = True
     patch_global("tg_api", fake_tg_api)
 
     print("\n" + "=" * 72)

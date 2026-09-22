@@ -117,10 +117,14 @@ TGSHARK_API_KEY_S2 = env("TGSHARK_API_KEY_S2", "")
 # Owner ka private log group/channel: naye user, sales, deposits ki copy yahan jayegi
 LOG_GROUP = env("LOG_GROUP", "")
 # Aged (Server 2) accounts par kitna EXTRA margin — purane numbers mehenge bikte hain
-AGED_UPLIFT_PCT = env_float("AGED_UPLIFT_PCT", 25.0)
+AGED_UPLIFT_PCT = env_float("AGED_UPLIFT_PCT", 15.0)
 # Country list me ek page par kitne countries (zyada = kam pages)
 COUNTRIES_PER_PAGE = env_int("COUNTRIES_PER_PAGE", 20)
 # Global Mix (XX) ke liye disclaimer
+AGED_MIX_NOTE = env(
+    "AGED_MIX_NOTE",
+    "🕰 Aged / old accounts ka random pool — number kisi bhi purane batch se mil sakta hai. "
+    "Kisi specific country ya saal ki guarantee nahi.")
 GLOBAL_MIX_NOTE = env(
     "GLOBAL_MIX_NOTE",
     "🎲 Random country — isme koi bhi desh ka number mil sakta hai. "

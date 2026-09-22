@@ -227,11 +227,16 @@ async def send_country_page(msg_or_query, code, page):
         idx = names.index(n)
         price = country_price(srv["countries"][n])
         cnt = stock_count(srv["countries"][n])
-        iso = (srv["countries"][n].get("iso") or n).upper()
+        cobj = srv["countries"][n]
+        iso = (cobj.get("iso") or n).upper()
+        cobj_disp = cobj.get("display") or ""
         dial = f"+{iso_dial(iso)} " if iso_dial(iso) else ""
-        label = (f"{cflag(srv, n)} {iso} {dial}• {cur()}{price} ({stock_label(cnt, short=True)})"
-                 if iso != "XX" else
-                 f"🎲 Global Mix • {cur()}{price} ({stock_label(cnt, short=True)})")
+        if cobj.get("aged"):                      # asli aged pool ka stock
+            label = f"🕰 {cobj_disp or 'Aged Mix'} • {cur()}{price} ({stock_label(cnt, short=True)})"
+        elif iso != "XX":
+            label = f"{cflag(srv, n)} {iso} {dial}• {cur()}{price} ({stock_label(cnt, short=True)})"
+        else:
+            label = f"🎲 {cobj_disp or 'Global Mix'} • {cur()}{price} ({stock_label(cnt, short=True)})"
         row.append(InlineKeyboardButton(label, callback_data=f"cid_{code}_{idx}_{page}"))
         if len(row) == 2:
             btns.append(row)
@@ -268,7 +273,8 @@ async def send_country_info(msg_or_query, code, cidx, page):
         text = (
             f"{E('bolt')} <b>Telegram Account — Instant Delivery</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"{E('globe')} Country : {iso_flag(cobj.get('iso'))} {esc(iso_name(cobj.get('iso')))}\n"
+            f"{E('globe')} Country : {iso_flag(cobj.get('iso'))} "
+            f"{esc(cobj.get('display') or iso_name(cobj.get('iso')))}\n"
             f"{E('money')} Price : ₹{price} per number\n"
             f"{E('box')} Available : <b>{stock_label(cnt)}</b>\n"
             f"{E('shield')} {esc(tags)}\n"

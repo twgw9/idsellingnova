@@ -115,29 +115,61 @@ async def notify_restock(code, name, watchers):
 
 
 async def tg_sync_stock(code=None):
-    """API se countries + price + stock laakar is server me daal do."""
+    """API se countries + price + stock laakar is server me daal do.
+
+    AGED server (tg_server >= 2) sirf ASLI aged pool dikhata hai — normal stock
+    kabhi mix nahi hota. Aged pool khali ho to inventory servers 2..8 auto-scan
+    karke koi bhi aged pool dhoondh leta hai (jo bhi aged ho, khud-ba-khud aaye).
+    """
     code = code or api_server_code()
     srv = get_server(code)
     if not srv:
         return 0, "❌ API server not found (create server 1 first: /addserver)"
     if not api_key_ok(code):
         return 0, api_key_missing_msg()
-    tg_server = int(srv.get("tg_server") or 0) or None      # 1 = new, 2 = aged
-    res = await tg_api("getCountrys", key=srv_api_key(code), server=tg_server)
-    # aged (server=2) catalog khali/error ho to default inventory se chalao
-    if (res.get("status") != "ok" or not (res.get("countries") or [])) and tg_server:
-        res = await tg_api("getCountrys", key=srv_api_key(code))
-        srv["tg_server_ok"] = False
-    else:
-        srv["tg_server_ok"] = bool(tg_server)
-    if res.get("status") != "ok":
-        msg = str(res.get("message", "unknown"))
-        hint = ""
-        if "apikey" in msg.lower() or "unauthor" in msg.lower():
-            hint = (" — key galat/expired lag rahi hai: .env me TGSHARK_API_KEY check karo "
-                    "ya bot me /setapikey &lt;nayi key&gt;")
-        return 0, f"❌ API error: {esc(msg)}{hint}"
-    countries = res.get("countries") or []
+    key = srv_api_key(code)
+    tg_server = int(srv.get("tg_server") or 0) or None      # 1 = new, 2+ = aged pools
+    is_aged = bool(tg_server and tg_server >= 2)
+
+    res = await tg_api("getCountrys", key=key, server=tg_server)
+    scanned = None
+    # aged pool khali/error → baaki inventory servers scan karo (2..8)
+    if is_aged and srv.get("aged_auto", True) and (
+            res.get("status") != "ok" or not (res.get("countries") or [])):
+        for cand in range(2, 9):
+            if cand == tg_server:
+                continue
+            r = await tg_api("getCountrys", key=key, server=cand)
+            if r.get("status") == "ok" and (r.get("countries") or []):
+                res, scanned = r, cand
+                srv["tg_server"] = cand
+                srv["tg_server_auto"] = True
+                break
+
+    ok_own = res.get("status") == "ok" and bool(res.get("countries") or [])
+    srv["tg_server_ok"] = ok_own
+    countries = (res.get("countries") or []) if ok_own else []
+
+    # purani entries hamesha saaf karo — API me nahi to bot me bhi nahi
+    keep = {str(c.get("iso") or c.get("country") or "").upper() for c in countries}
+    for stale in [k for k in srv["countries"]
+                  if k.upper() not in keep and srv["countries"][k].get("api")]:
+        srv["countries"].pop(stale, None)
+
+    if not ok_own:
+        db["tgshark"]["last_sync"] = time.time()
+        await save_db()
+        if res.get("status") != "ok":
+            msg = str(res.get("message", "unknown"))
+            hint = ""
+            if "apikey" in msg.lower() or "unauthor" in msg.lower():
+                hint = (" — key galat/expired lag rahi hai: .env me TGSHARK_API_KEY check karo "
+                        "ya bot me /setapikey &lt;nayi key&gt;")
+            return 0, f"❌ API error: {esc(msg)}{hint}"
+        return 0, ("⚠️ Aged pool abhi khali hai (0 numbers) — jaise hi aged stock "
+                   "aayega, apne aap dikh jayega." if is_aged
+                   else "⚠️ Is inventory me abhi koi stock nahi.")
+
     added = updated = 0
     for c in countries:
         iso = str(c.get("iso") or c.get("country") or "").upper()
@@ -156,23 +188,37 @@ async def tg_sync_stock(code=None):
             updated += 1
         cobj["api"] = True
         cobj["iso"] = iso
-        cobj["display"] = iso_name(iso)
+        cobj["aged"] = is_aged
         cobj["api_count"] = cnt
         cobj["api_cost"] = cost
         cobj["api_max"] = float(c.get("max_price", cost) or cost)
         cobj["price"] = tg_sell_price(cost, price_key(code, iso))
-        if iso == "XX" and not cobj.get("desc"):     # Global Mix disclaimer
-            cobj["desc"] = GLOBAL_MIX_NOTE
+        if is_aged:
+            cobj["display"] = ("Aged Mix (Old Accounts)" if iso == "XX"
+                               else f"{iso_name(iso)} (Aged)")
+            if not cobj.get("desc"):
+                cobj["desc"] = AGED_MIX_NOTE
+        else:
+            cobj["display"] = iso_name(iso)
+            if iso == "XX" and not cobj.get("desc"):      # Global Mix disclaimer
+                cobj["desc"] = GLOBAL_MIX_NOTE
         if old_cnt <= 0 and cnt > 0:                      # restock -> alert subscribers
             watchers = (db.get("notify") or {}).pop(price_key(code, iso), [])
             if watchers:
                 asyncio.create_task(notify_restock(code, iso, watchers))
+
     db["tgshark"]["last_sync"] = time.time()
     bal = await tg_api("getBalance")
     if bal.get("status") == "ok":
         db["tgshark"]["last_balance"] = bal.get("balance", 0)
     await save_db()
-    return (added + updated), f"✅ Synced: <b>+{added}</b> new, <b>{updated}</b> updated (total {len(countries)} countries)"
+    nums = sum(int(c.get("count", 0) or 0) for c in countries)
+    msg = (f"✅ Synced: <b>+{added}</b> new, <b>{updated}</b> updated "
+           f"(total {len(countries)} countries • {nums} numbers)")
+    if scanned:
+        msg += f"\n⚡ Aged pool auto-detected: inventory server <b>{scanned}</b>"
+    return (added + updated), msg
+
 
 async def tg_sync_all():
     """Sabhi supplier servers (Server 1 = new, Server 2 = old) sync karo."""

@@ -27,10 +27,12 @@ from .deposit import *
 
 # ================= PURCHASE EXECUTION =================
 
-async def api_buy_number(iso, server=None):
+async def api_buy_number(iso, server=None, strict=False):
     """Reserve a number from the supplier. In demo mode a sample number is returned.
 
-    server=1 → new accounts inventory, server=2 → AGED accounts inventory.
+    server=1 → new accounts inventory, server=2+ → AGED accounts inventory.
+    strict=True (aged servers) → aged stock na mile to normal pool se KHARIDNA HI NAHI,
+    buyer ko refund + out-of-stock (pehle yahi bug tha: aged me normal mil jata tha).
     """
     if tg_cfg()["dry_run"]:
         return {"ok": True, "dry": True,
@@ -38,8 +40,8 @@ async def api_buy_number(iso, server=None):
                 "hash": "DRY" + "".join(random.choices(string.ascii_uppercase + string.digits, k=10)),
                 "price": 0.0, "twofa": ""}
     res = await tg_api("getNumber", country=iso, server=server)
-    if server and (res.get("status") != "ok" or not res.get("phone")):
-        res = await tg_api("getNumber", country=iso)      # aged stock khatam → default
+    if server and not strict and (res.get("status") != "ok" or not res.get("phone")):
+        res = await tg_api("getNumber", country=iso)      # sirf new pool ke liye fallback
     if res.get("status") == "ok" and res.get("phone"):
         return {"ok": True, "dry": False, "phone": str(res.get("phone")),
                 "hash": str(res.get("hash_code") or ""), "price": res.get("price", 0),
@@ -226,8 +228,9 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
 
     # ---------- LIVE API purchase ----------
     if api_item:
-        srv_tg = int(srv.get("tg_server") or 0) if srv.get("tg_server_ok") else None
-        bought = await api_buy_number(cobj.get("iso", name), server=srv_tg)
+        srv_tg = int(srv.get("tg_server") or 0) or None
+        strict_buy = bool(srv_tg and srv_tg >= 2)         # aged: normal kabhi na mile
+        bought = await api_buy_number(cobj.get("iso", name), server=srv_tg, strict=strict_buy)
         if not bought.get("ok"):
             # AUTO REFUND
             async with db_lock:
