@@ -488,12 +488,15 @@ async def cmd_tgstatus(client, message):
             cobj = srv["countries"][n]
             rows += (f"   {iso_flag(cobj.get('iso'))} {esc(iso_name(cobj.get('iso')))}: "
                      f"{stock_count(cobj)} pcs @ ₹{country_price(cobj)} (cost ${cobj.get('api_cost', 0)})\n")
+    err_line = ((f"{E('warn')} <code>{esc(str(bal.get('message'))[:90])}</code>\n")
+                if bal.get("status") != "ok" else "")
     await message.reply_text(
         f"{E('api')} <b>LIVE SERVER STATUS</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"{E('money')} API balance: <b>${bal.get('balance', '?')}</b>\n"
         f"{E('user')} Account: {esc(info.get('username', '?'))} (rank {esc(info.get('rank', '?'))})\n"
-        f"{E('server')} API server: <code>{esc(code or '—')}</code>"
+        + err_line
+        + f"{E('server')} API server: <code>{esc(code or '—')}</code>"
         f" ({esc(srv['name']) if srv else '—'})\n"
         f"{E('box')} Live stock: <b>{live}</b> numbers • {ncn} countries\n"
         f"{E('chart')} Profit: <b>{cfg['profit_pct']:.0f}%</b> • 1$ = ₹{cfg['usd_inr']}"
@@ -806,10 +809,13 @@ async def cmd_setannounce(client, message):
     except ValueError:
         pass
     db["announce_channel"] = val
+    _auto = auto_fsub_add(str(val), name="Announcements",
+                          link=("https://t.me/" + str(val)[1:]) if str(val).startswith("@") else "")
     await save_db()
     await announce(f"{E('sparkle')} <b>Announcements enabled</b>\n"
                    f"Price updates and low-stock alerts will be posted in this channel.")
-    await message.reply_text(f"{E('check')} Announcement channel set to <code>{esc(val)}</code>.")
+    await message.reply_text(f"{E('check')} Announcement channel set to <code>{esc(val)}</code>."
+                             + ("\n🔒 Force-join me bhi add ho gaya." if _auto else ""))
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^/setlowstock\s+(\d+)"))

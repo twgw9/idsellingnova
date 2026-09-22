@@ -257,10 +257,13 @@ async def cmd_addchannel(client, message):
         return await message.reply_text(
             "❌ Format: <code>/addchannel Sales Updates | https://t.me/yourchannel</code>")
     db.setdefault("home_channels", []).append({"title": title, "url": url})
+    added_fsub = auto_fsub_add("", name=title, url=url)      # force-join me bhi auto
     await save_db()
     await message.reply_text(
         f"{E('check')} Channel added on Home screen: <b>{esc(title)}</b>\n"
-        f"Total: {len(db['home_channels'])} • Hatane ke liye <code>/channels</code>")
+        f"Total: {len(db['home_channels'])} • Hatane ke liye <code>/channels</code>\n"
+        + (f"🔒 Force-join me bhi add ho gaya (har naye user ko join karna hoga)."
+           if added_fsub else ""))
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^/delchannel\s+(\d+)\s*$"))
@@ -633,6 +636,20 @@ async def cmd_agedcat(client, message):
         if not rest.isdigit() or not (1 <= int(rest) <= len(srv["aged_cats"])):
             return await message.reply_text("❌ Format: <code>/agedcat del 3</code>")
         srv["aged_cats"].pop(int(rest) - 1)
+    elif what == "flat":                     # sabhi tiles ek hi price
+        if not rest.isdigit():
+            return await message.reply_text("❌ Format: <code>/agedcat flat 70</code>")
+        for c in srv["aged_cats"]:
+            c["price"] = int(rest)
+        srv["aged_cats_on"] = True
+    elif what == "step":                     # har agla tile itna ₹ mehnga
+        if not rest.isdigit():
+            return await message.reply_text("❌ Format: <code>/agedcat step 10</code>")
+        base = tg_sell_price(0.0, price_key(code, "CAT:0")) if False else 0
+        for i, c in enumerate(srv["aged_cats"]):
+            c["price"] = 0                   # sync me pool price + step lagega
+        srv["aged_cats_step"] = int(rest)
+        srv["aged_cats_on"] = True
     elif what == "clear":
         srv["aged_cats"] = []
     elif what in ("on", "off"):
@@ -681,3 +698,286 @@ async def cmd_lossguard(client, message):
         f"• Sale ke baad: asli kharcha zyada → us country ka stock freeze + alert\n"
         f"• Min profit floor: ₹{min_profit_inr():g} per sale\n\n"
         f"<code>/lossguard on|off</code> • <code>/setminprofit 5</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/serveroff\s+(\w+)\s*$"))
+@admin_only
+async def cmd_serveroff(client, message):
+    """/serveroff s2 — server buyers se chhup jayega + sync band (baad me /serveron s2)"""
+    code = message.matches[0].group(1).lower()
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    srv["off"], srv["sync"] = True, False
+    await save_db()
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> ab <b>BAND</b> hai.\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"• Buyers ko nahi dikhega\n• Stock sync band\n\n"
+        f"Wapas chalana ho to: <code>/serveron {esc(code)}</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/serveron\s+(\w+)\s*$"))
+@admin_only
+async def cmd_serveron(client, message):
+    """/serveron s2 — server wapas chalu (buyers ko dikhega + sync)"""
+    code = message.matches[0].group(1).lower()
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    srv["off"] = False
+    if srv.get("source") == "tgshark":
+        srv["sync"] = True
+    await save_db()
+    n, msg = (await tg_sync_stock(code)) if srv.get("sync") else (0, "manual server")
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> wapas <b>CHALU</b> ho gaya.\n"
+        f"━━━━━━━━━━━━━━━━━━\n{msg}")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/servers\s*$"))
+@admin_only
+async def cmd_servers(client, message):
+    """/servers — sab servers ki status (chalu / band)"""
+    if not server_codes():
+        return await message.reply_text("❌ Koi server nahi hai.")
+    lines = []
+    for c in server_codes():
+        s = db["servers"][c]
+        state = "🔴 BAND" if server_is_off(s) else "🟢 CHALU"
+        kind = "API" if srv_is_api(s) else "manual"
+        lines.append(f"• <code>{esc(c)}</code> — {esc(s.get('name', c))} "
+                     f"({len(s.get('countries', {}))} countries, {kind}) — <b>{state}</b>")
+    await message.reply_text(
+        f"{E('box')} <b>Servers</b>\n━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) +
+        f"\n\n<code>/serveroff s2</code> • <code>/serveron s2</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/hidemix\s+(\w+)\s*(on|off)?\s*$"))
+@admin_only
+async def cmd_hidemix(client, message):
+    """/hidemix s1 on — random pool (Global Mix / XX) us server me chhup jayega"""
+    code = message.matches[0].group(1).lower()
+    arg = (message.matches[0].group(2) or "").strip().lower()
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    if arg in ("on", "off"):
+        srv["hide_mix"] = (arg == "on")
+        await save_db()
+    hidden = bool(srv.get("hide_mix"))
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> me random pool "
+        f"{'<b>CHHUPA DIYA</b> 🎲🚫' if hidden else '<b>DIKH RAHA HAI</b> 🎲'}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Buyers ko ab {len(buyer_country_list(srv))} countries dikhenge "
+        f"(kul {len(country_list(srv))}).\n\n"
+        f"<code>/hidemix {esc(code)} on|off</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/precheck\s*(on|off)?\s*$"))
+@admin_only
+async def cmd_precheck(client, message):
+    """/precheck on|off — kharidne se pehle API se bhav dobara check (nuksan se bachav)"""
+    arg = (message.matches[0].group(1) or "").strip().lower()
+    if arg in ("on", "off"):
+        db.setdefault("tgshark", {})["precheck"] = (arg == "on")
+        await save_db()
+    await message.reply_text(
+        f"{E('shield')} <b>Pre-buy cost check</b>: "
+        f"{'<b>ON</b> ✅' if precheck_on() else '<b>OFF</b> ⚠️'}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Har kharidari se pehle API se bhav dobara check hota hai — agar bhav "
+        f"badh gaya hai to sale rok kar price refresh kar dete hain, taaki aapko "
+        f"kabhi nuksan na ho.\n\n<code>/precheck on|off</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/autofsub\s*(on|off)?\s*$"))
+@admin_only
+async def cmd_autofsub(client, message):
+    """/autofsub on|off — naya channel/GC add hote hi force-join me bhi daal do"""
+    arg = (message.matches[0].group(1) or "").strip().lower()
+    if arg in ("on", "off"):
+        db["auto_fsub"] = (arg == "on")
+        await save_db()
+    on = db.get("auto_fsub", True)
+    await message.reply_text(
+        f"{E('check')} <b>Auto force-join</b>: {'<b>ON</b> ✅' if on else '<b>OFF</b>'}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"ON = jab bhi aap naya channel/group add karein (/addchannel, /setloggroup, "
+        f"/setannounce), wo apne aap force-join list me bhi aa jayega.\n\n"
+        f"<code>/autofsub on|off</code> • <code>/fsubmode lenient|strict</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/fsubmode\s*(lenient|strict)?\s*$"))
+@admin_only
+async def cmd_fsubmode(client, message):
+    """/fsubmode lenient|strict — pending join request wale ko bhi andar aane dein?"""
+    arg = (message.matches[0].group(1) or "").strip().lower()
+    if arg in ("lenient", "strict"):
+        db["fsub_mode"] = arg
+        db.pop("fsub_ok", None)           # sabko dobara verify karana hoga
+        await save_db()
+    mode = "lenient" if fsub_lenient() else "strict"
+    await message.reply_text(
+        f"{E('shield')} <b>Force-join mode</b>: <b>{mode.upper()}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        + ("<b>LENIENT</b> — join request pending hai to bhi Verify ke baad user andar "
+           "aa jayega (recommended).\n" if mode == "lenient" else
+           "<b>STRICT</b> — sirf pakka member ko andar milega (bot ko channel ka admin "
+           "hona chahiye warna sab block honge).\n")
+        + "\n<code>/fsubmode lenient|strict</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/lossreport\s*$"))
+@admin_only
+async def cmd_lossreport(client, message):
+    """/lossreport — kitna profit, kitna nuksan, kaun si cheez khatre me hai"""
+    sales = db.get("sales", [])
+    revenue = sum(int(s.get("price", 0) or 0) for s in sales)
+    cost = 0.0
+    for s in sales:
+        sd = (db.get("sold_sessions") or {}).get(s.get("sale_id")) or {}
+        cost += float(sd.get("cost_usd") or 0) * float(tg_cfg()["usd_inr"] or 0)
+    losses = [d for d in db.get("deposit_log", []) if "banned" in str(d.get("status", ""))]
+    guard = "ON ✅" if loss_guard_on() else "OFF ⚠️"
+    pre = "ON ✅" if precheck_on() else "OFF ⚠️"
+    refund = "ON ⚠️ (supplier ka paisa gaya + buyer ko refund = NUKSAN)" \
+        if db.get("auto_refund", True) else "OFF ✅"
+    await message.reply_text(
+        f"{E('chart')} <b>PROFIT / LOSS REPORT</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Revenue: <b>₹{revenue}</b>\n"
+        f"💸 Supplier cost: <b>₹{cost:.0f}</b>\n"
+        f"📈 Profit: <b>₹{revenue - cost:.0f}</b>\n"
+        f"🧾 Sales: <b>{len(sales)}</b>\n\n"
+        f"{E('shield')} <b>Safety</b>\n"
+        f"• Loss guard: {guard} (kharcha zyada → stock freeze + alert)\n"
+        f"• Pre-buy cost check: {pre} (bhav badha → sale block)\n"
+        f"• Min profit floor: ₹{min_profit_inr():g} per sale\n"
+        f"• Auto-refund (OTP timeout): {refund}\n"
+        f"• 1$ = ₹{tg_cfg()['usd_inr']:g}\n\n"
+        f"<code>/setminprofit 5</code> • <code>/lossguard on</code> • "
+        f"<code>/precheck on</code> • <code>/setautorefund off</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/credit\s+(\d+)\s+(\d+)\s*$"))
+@admin_only
+async def cmd_credit(client, message):
+    """/credit <user id> <amount> — user ko manually balance do (bina deposit ke)"""
+    uid = int(message.matches[0].group(1))
+    amt = int(message.matches[0].group(2))
+    if amt <= 0 or amt > 100000:
+        return await message.reply_text("❌ Amount 1 se 100000 ke beech ho.")
+    async with db_lock:
+        rec = user_record(uid)
+        rec["balance"] = int(rec.get("balance", 0)) + amt
+        rec["deposited"] = int(rec.get("deposited", 0)) + amt
+        bal = rec["balance"]
+        await save_db()
+    try:
+        await app.send_message(
+            uid, f"💰 <b>₹{amt} credited</b> by admin.\nNew balance: <b>₹{bal}</b>")
+    except Exception:
+        pass
+    await log_event(f"💰 <b>Manual credit</b> ₹{amt} → <code>{uid}</code> "
+                    f"by {esc(message.from_user.first_name or 'admin')}")
+    await message.reply_text(f"{E('check')} ₹{amt} credited to <code>{uid}</code> • "
+                             f"balance ₹{bal}")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/apiprobe\s*$"))
+@admin_only
+async def cmd_apiprobe(client, message):
+    """/apiprobe — API call kyun fail ho rahi hai, asli wajah batao (read-only)"""
+    await message.reply_text("🔍 Probing the supplier API (3 read-only calls)...")
+    rows, errs = [], []
+    for act in ("getBalance", "getInfo", "getCountrys"):
+        t0 = time.time()
+        res = await tg_api(act)
+        ms = int((time.time() - t0) * 1000)
+        ok = res.get("status") == "ok"
+        if ok:
+            rows.append(f"🟢 <code>{act}</code> — ok ({ms} ms)")
+        else:
+            errs.append(str(res.get("message") or "unknown"))
+            rows.append(f"🔴 <code>{act}</code> — {esc(str(res.get('message'))[:70])} ({ms} ms)")
+    hint = ""
+    joined = " ".join(errs).lower()
+    if not errs:
+        hint = "✅ Sab theek hai — API connect ho raha hai."
+    elif "apikey" in joined or "401" in joined or "unauthor" in joined:
+        hint = ("🔑 <b>Key galat/expired</b> — .env me TGSHARK_API_KEY check karo "
+                "ya <code>/setapikey &lt;nayi key&gt;</code>.")
+    elif "certificate" in joined or "ssl" in joined:
+        hint = ("🔒 <b>SSL error</b> — .env me <code>TGSHARK_VERIFY_SSL=false</code> "
+                "daal kar restart karo.")
+    elif "timed out" in joined or "timeout" in joined:
+        hint = ("⏱ <b>Timeout</b> — .env me <code>TGSHARK_HTTP_TIMEOUT=40</code> aur "
+                "<code>TGSHARK_HTTP_RETRIES=4</code> karke restart karo.")
+    elif "name or service not known" in joined or "dns" in joined or "resolve" in joined:
+        hint = "🌐 <b>DNS/Network block</b> — hosting se outbound HTTPS allow karwao."
+    else:
+        hint = ("❓ Upar wala error supplier ki taraf se hai — thodi der baad "
+                "<code>/apiprobe</code> dobara chalao (502 kabhi-kabhi aata hai).")
+    await message.reply_text(
+        f"{E('api')} <b>API PROBE</b>\n━━━━━━━━━━━━━━━━━━\n"
+        + "\n".join(rows) + f"\n\n{hint}")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/report\s*$"))
+@admin_only
+async def cmd_report(client, message):
+    """/report — kitna sell hua, kitna profit, stock, deposits (poora report)"""
+    sales = list(db.get("sales", []))
+    rate = float(tg_cfg()["usd_inr"] or 0)
+    revenue = sum(int(s.get("price", 0) or 0) for s in sales)
+    cost = 0.0
+    for s in sales:
+        sd = (db.get("sold_sessions") or {}).get(s.get("sale_id")) or {}
+        c = float(sd.get("cost_usd") or 0)
+        if not c and s.get("api"):
+            c_key = str(s.get("code") or "")
+        cost += c * rate
+    profit = revenue - cost
+    today = now_str()[:10]
+    t_sales = [s for s in sales if str(s.get("time", ""))[:10] == today]
+    t_rev = sum(int(s.get("price", 0) or 0) for s in t_sales)
+    top = {}
+    for s in sales:
+        k = str(s.get("country") or s.get("label") or "—")
+        top[k] = top.get(k, 0) + 1
+    top_rows = "".join(
+        f"   {esc(k)} — <b>{v}</b> sold\n"
+        for k, v in sorted(top.items(), key=lambda kv: -kv[1])[:5]) or "   (abhi koi sale nahi)\n"
+    users = len(db.get("users", {}))
+    pend = len(db.get("pending_deposits", {}))
+    stock = 0
+    for c in server_codes():
+        srv = get_server(c)
+        if srv and not server_is_off(srv):
+            stock += sum(stock_count(x) for x in srv["countries"].values())
+    bal = db["tgshark"].get("last_balance", 0)
+    await message.reply_text(
+        f"{E('chart')} <b>STORE REPORT</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📅 <b>Aaj</b> — {len(t_sales)} sales • ₹{t_rev}\n"
+        f"🧾 <b>Kul</b> — {len(sales)} sales\n"
+        f"💰 Revenue: <b>₹{revenue}</b>\n"
+        f"💸 Cost: <b>₹{cost:.0f}</b>\n"
+        f"📈 Profit: <b>₹{profit:.0f}</b>"
+        + (f"  ({profit / revenue * 100:.0f}% margin)" if revenue else "") + "\n\n"
+        f"<b>🔥 Top items</b>\n{top_rows}\n"
+        f"👥 Users: <b>{users}</b>\n"
+        f"📦 Live stock: <b>{stock}</b> numbers\n"
+        f"⏳ Pending deposits: <b>{pend}</b>\n"
+        f"💳 Supplier balance: <b>${bal}</b>\n"
+        f"💱 1$ = ₹{rate:g}\n\n"
+        f"<code>/lossreport</code> safety flags • <code>/apiprobe</code> API check")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/lossreport\s*$"))
+@admin_only
+async def _lossreport_alias(client, message):
+    message.matches = [re.match(r"(?i)^/lossreport\s*$", "/lossreport")]
+    await cmd_lossreport(client, message)

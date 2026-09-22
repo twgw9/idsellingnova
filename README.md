@@ -284,3 +284,61 @@ MIT — `LICENSE` file dekho.
   • Bug fixes: `.env` inline comments (`15  # comment`) ab theek se padhe jate hain —
     pehle aisi lines ignore ho kar default value use hoti thi. OTP-timeout refund ab
     theek server me stock wapas karta hai (s2 ki jagah s1 nahi).
+
+## Server ON / OFF (v6.3.10)
+  `/serveroff s2` — server buyers se chhup jata hai + stock sync band (baad me kabhi bhi
+  wapas: `/serveron s2`). `/servers` — sab servers ki status (CHALU / BAND).
+
+  Aged tiles ab hamesha **asli pool ke bhav** par bikte hain (supplier se pool ka sabse
+  sasta number milta hai, isliye sab tiles ka price ek hi hota hai — ₹220 wali mehngi
+  pricing hat gayi). Chahe to khud set karein:
+  `/agedcat price 3 90` (tile 3 = ₹90) • `/agedcat flat 70` (sab ₹70) • `/agedcat step 10`
+  (har agla tile ₹10 mehnga) • `/agedcat preset` • `/agedcat list` • `/agedcat clear`.
+
+## v6.3.11 — nuksan se double safety + API connect
+  • **Pre-buy cost check** (`/precheck on|off`) — har kharidari se PEHLE API se bhav dobara
+    check hota hai. Pool ka bhav badh gaya (₹65 wale tile par ₹200 wala number) →
+    **sale block** + price refresh. Aapka ek bhi paisa nahi katega.
+  • **API retry + backoff** — 502 / 503 / timeout par 3 koshish (0.8s, 1.6s, 3.2s gap);
+    401/402/403/404 par bekar retry nahi. `/tgstatus` ab asli error dikhata hai ("$?" nahi).
+  • **`/hidemix s1 on`** — random pool (Global Mix / XX) us server se chhup jayega.
+  • Aged (old) server par **15% extra profit** (`AGED_UPLIFT_PCT=15.0`) — waise hi rahega.
+
+## v6.3.12 — force-join + ban button + optimizations
+  • **Ban button** — payment-request screen par ab `🚫 Ban User` seedha dikhta hai
+    (pehle sirf Back ke baad aata tha aur click kaam bhi nahi karta tha — routing fix).
+  • **Join request pending = verified** — Verify dabane par user andar aa jata hai, chahe
+    admin ne request approve ki ho ya nahi (pyrogram 2.0.106 me pending status nahi milta,
+    isliye Verify click ko hi maan liya jata hai). `/fsubmode lenient|strict`.
+  • **Auto force-join** — `/addchannel` ya `/setannounce` se naya channel/group add hote hi
+    wo force-join list me bhi aa jata hai (`/autofsub on|off`). Private log group kabhi nahi.
+  • **Gate sirf normal browsing par** — home/products/profile/deposit jaisi clicks par
+    "Join first"; **kharidari ya OTP ke beech me kabhi nahi** (`buy_`, `otp_`, deposit verify...).
+  • Optimization: fsub result 6 ghante cache → baar baar Telegram API call nahi hoti.
+
+## v6.4.0 — FINAL (custom amount • double-credit guard • pending detect • UI)
+  • **Custom deposit amount** — user ne ₹25 bola par ₹35 bheje? Approve par
+    `✅ Credit ₹25 (requested)` ya `✏️ Custom Amount` → admin 35 type kare → utna credit.
+    `/credit <user id> <amount>` se bina deposit ke bhi balance diya ja sakta hai.
+  • **Double-credit kabhi nahi** — processed_deposits check + pending pop ek hi lock me;
+    doosra admin approve dabaye to "already processed" (balance ek hi baar badhta hai).
+    Duplicate user+amount ho to admin caption me ⚠️ warning.
+  • **Pending join request sach me detect** — Verify par Bot API `approveChatJoinRequest`
+    se pending request approve ho jati hai (user pakka member ban jata hai). Bot admin na ho
+    to lenient mode me Verify click par entry mil jati hai. `/fsubmode lenient|strict`.
+  • **`/lossreport`** — revenue, supplier cost, profit, aur safety flags (loss guard,
+    pre-buy check, min profit, auto-refund warning — auto-refund ON = nuksan).
+  • **UI** — home screen ab wallet balance + instant-OTP line ke saath, menu 2-column.
+  • Loss safety (pehle se): pre-buy cost check → sale block; loss guard → stock freeze +
+    alert; min-profit floor; rate change par auto recalc.
+
+## v6.4.1 — API errors khatam + Channels/Home buttons + poora REPORT
+  • **Robust HTTP** — pehle `requests` (retries 0.8s/1.6s/3.2s), fail hone par `urllib`
+    fallback, `TGSHARK_VERIFY_SSL=false` option SSL error ke liye, timeout configurable.
+  • **`/apiprobe`** — 3 read-only calls karke asli wajah batata hai (key galat / SSL /
+    timeout / DNS block) + fix ka tareeka. Lagataar 3 fail → admins + GC ko alert.
+  • **`/report`** — aaj ki sales, kul sales, revenue, supplier cost, **profit + margin %**,
+    top 5 items, users, live stock, pending deposits, supplier balance.
+  • **UI** — menu me `🛒 Products | 👤 Profile` / `💳 Deposit | 📦 My IDs` /
+    **`📢 Channels`** | `📞 Support` (+ admin panel). Har screen ke footer me
+    **`📢 Channels`** aur **`🏠 Back to Home`**.

@@ -203,6 +203,8 @@ TGSHARK_ROUND_MODE = env("TGSHARK_ROUND_MODE", "ceil")       # ceil | nearest | 
 TGSHARK_MIN_PROFIT = env_float("TGSHARK_MIN_PROFIT", 0.0)
 # Asli kharcha mili price se zyada nikle to us country ka stock FREEZE + admin alert
 TGSHARK_LOSS_GUARD = env_bool("TGSHARK_LOSS_GUARD", True)
+# Kharidne se theek pehle API se bhav dobara check (bhav badha to sale rok do)
+TGSHARK_PRECHECK = env_bool("TGSHARK_PRECHECK", True)
 TGSHARK_MAX_PRICE = env_int("TGSHARK_MAX_PRICE", 0)          # 0 = no cap
 TGSHARK_CHARM = env_bool("TGSHARK_CHARM", False)             # ₹49 / ₹99 pricing
 

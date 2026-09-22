@@ -149,10 +149,26 @@ async def handle_dep_admin(query, data, uid):
         if ref not in db.get("pending_deposits", {}):
             return await ack(query, "❌ Already processed or expired.", show_alert=True)
         await ack(query)
+        dep = db.get("pending_deposits", {}).get(ref) or {}
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ CONFIRM Approve", callback_data=f"dep_appc_{ref}"),
-             InlineKeyboardButton("🔙 Back", callback_data=f"dep_back_{ref}")]]))
+            [InlineKeyboardButton(f"✅ Credit ₹{dep.get('amount', 0)} (requested)",
+                                  callback_data=f"dep_appc_{ref}")],
+            [InlineKeyboardButton("✏️ Custom Amount", callback_data=f"dep_amt_{ref}")],
+            [InlineKeyboardButton("🔙 Back", callback_data=f"dep_back_{ref}")]]))
         return
+
+    if data.startswith("dep_amt_"):          # admin khud amount daalega
+        ref = data[8:]
+        dep = db.get("pending_deposits", {}).get(ref)
+        if not dep:
+            return await ack(query, "❌ Already processed or expired.", show_alert=True)
+        await ack(query)
+        user_states[uid] = {"state": f"DEP_AMT_{ref}"}
+        return await query.message.reply_text(
+            f"✏️ <b>Custom amount</b>\n━━━━━━━━━━━━━━━━━━\n"
+            f"Ref <code>{ref}</code> • requested ₹{dep.get('amount', 0)}\n\n"
+            f"Kitna credit karna hai? <b>sirf number</b> likhein (jaise <code>35</code>):\n"
+            f"<i>/stop = cancel</i>")
 
     if data.startswith("dep_rej_"):
         ref = data[8:]
@@ -228,17 +244,39 @@ async def handle_dep_admin(query, data, uid):
 
     approve = data.startswith("dep_appc_")
     ref = data[9:]
+    return await settle_deposit(query, ref, approve, admin_name)
+
+
+# ================= DEPOSIT SETTLE (shared by Approve / Custom amount) =================
+
+async def settle_deposit(query, ref, approve, admin_name, credit_override=None):
+    """Deposit ka final hisaab: ek hi baar credit, chahe amount requested ho ya custom.
+
+    credit_override diya to UTNA credit hota hai (jaise user ne ₹25 bola par ₹35
+    bheje → admin 35 daal de). Double-credit kabhi nahi hota: processed_deposits
+    check + pending se pop, dono ek hi lock me.
+    """
     async with db_lock:
+        if (db.get("processed_deposits") or {}).get(ref):
+            if query:
+                await ack(query, "❌ Is payment ka hisaab ho chuka hai — "
+                                 "do baar credit nahi hoga.", show_alert=True)
+            return False
         dep = db["pending_deposits"].pop(ref, None)
         if not dep:
-            return await ack(query, "❌ This payment was already processed (another admin or timeout).",
-                             show_alert=True)
+            if query:
+                await ack(query, "❌ Already processed (doosre admin ne kar diya).",
+                          show_alert=True)
+            return False
         db["processed_deposits"][ref] = "approved" if approve else "rejected"
         db["deposit_log"].append({"ref": ref, "uid": dep["uid"], "amount": dep["amount"],
                                   "status": "approved" if approve else "rejected",
-                                  "time": now_str(), "by": admin_name})
+                                  "time": now_str(), "by": admin_name,
+                                  "custom": credit_override is not None})
+    async with db_lock:
         new_bal = 0
-        credit = int(dep["amount"]) + int(dep.get("bonus", 0) or 0)
+        credit = (int(credit_override) if credit_override is not None
+                  else int(dep["amount"]) + int(dep.get("bonus", 0) or 0))
         ref_bonus = 0
         if approve:
             rec = user_record(dep["uid"])
@@ -274,13 +312,19 @@ async def handle_dep_admin(query, data, uid):
 
     word = "APPROVED" if approve else "REJECTED"
     emoji = "✅" if approve else "❌"
+    dup = sum(1 for d in (db.get("deposit_log") or [])[-40:]
+              if d.get("uid") == dep["uid"] and int(d.get("amount") or 0) == int(dep["amount"])
+              and d.get("status") == "approved")
     cap = (
         f"{emoji} <b>DEPOSIT {word}</b>\n"
         f"👤 User: <code>{dep['uid']}</code>\n"
-        f"💰 Amount: ₹{dep['amount']}\n"
+        f"💰 Requested: ₹{dep['amount']}"
+        + (f" → <b>Credited: ₹{credit}</b> (custom)" if credit_override is not None else "") + "\n"
         f"🔖 Ref: <code>{ref}</code>\n"
         f"🛡 {word.capitalize()} by: <b>{esc(admin_name)}</b>\n"
-        f"🕒 {now_str()}"
+        + (f"⚠️ <i>Duplicate check: same user + amount {dup} baar recent me</i>\n"
+           if dup > 1 else "")
+        + f"🕒 {now_str()}"
     )
     for chat_id, msg_id in dep.get("group_msgs", {}).items():
         try:
@@ -289,18 +333,19 @@ async def handle_dep_admin(query, data, uid):
                 message_id=msg_id, caption=cap, reply_markup=None)
         except Exception:
             pass
-    await ack(query)
-    try:
-        await query.message.edit_caption(caption=cap, reply_markup=None)
-    except Exception:
-        pass
+    if query:
+        await ack(query)
+        try:
+            await query.message.edit_caption(caption=cap, reply_markup=None)
+        except Exception:
+            pass
 
     if approve:
         bonus_line = (f"\n🎁 Coupon bonus: +₹{dep.get('bonus', 0)}" if dep.get("bonus") else "")
         user_text = (
             f"✅ <b>{esc(bot_name())} DEPOSIT APPROVED!</b>\n\n"
             f"💳 Method: UPI QR Code\n"
-            f"💰 Amount: ₹{dep['amount']}{bonus_line}\n"
+            f"💰 Amount: ₹{credit}{bonus_line}\n"
             f"💳 New Balance: ₹{new_bal}\n\n"
             f"You can now purchase accounts! 🎉"
         )

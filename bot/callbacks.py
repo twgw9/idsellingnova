@@ -39,6 +39,17 @@ async def callback_router(client, query: CallbackQuery):
     data = query.data or ""
     uid = query.from_user.id
 
+    # ---------- force-join gate: normal browsing par, kharidari/OTP ke beech me NAHI ----------
+    if fsub_gate_needed(uid, data):
+        gate = await fsub_gate(client, uid)
+        if gate is not None:
+            await ack(query)
+            try:
+                await query.message.reply_text(gate[0], reply_markup=gate[1])
+            except Exception:
+                pass
+            return
+
     if data == "home":
         user_states.pop(uid, None)
         await ack(query)
@@ -367,8 +378,8 @@ async def callback_router(client, query: CallbackQuery):
         return
 
     # ---------- deposit ADMIN verification ----------
-    if data.startswith(("dep_app_", "dep_appc_", "dep_rej_", "dep_rejc_",
-                        "dep_back_", "dep_msg_")):
+    if data.startswith(("dep_app_", "dep_appc_", "dep_rej_", "dep_rejc_", "dep_amt_",
+                        "dep_back_", "dep_msg_", "dep_ban_", "dep_banc_")):
         if not is_admin(uid):
             return await ack(query, "❌ Only admins can verify payments.", show_alert=True)
         return await handle_dep_admin(query, data, uid)

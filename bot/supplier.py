@@ -86,11 +86,54 @@ def stock_label(cnt, short=False):
     return str(cnt)
 
 
-def _tg_http(params):
-    url = TGSHARK_BASE + "?" + urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "PremiumIDStoreBot/4.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+TG_HTTP_TIMEOUT = env_int("TGSHARK_HTTP_TIMEOUT", 20)
+TG_HTTP_RETRIES = env_int("TGSHARK_HTTP_RETRIES", 3)
+
+
+TG_VERIFY_SSL = env_bool("TGSHARK_VERIFY_SSL", True)
+
+
+def _tg_url(params):
+    return TGSHARK_BASE + "?" + urlencode(params)
+
+
+def _tg_http_requests(params):
+    """Pehle `requests` se koshish (zyada hosting-par bharosemand)."""
+    import requests
+    r = requests.get(_tg_url(params), timeout=TG_HTTP_TIMEOUT,
+                     verify=TG_VERIFY_SSL,
+                     headers={"User-Agent": "PremiumIDStoreBot/4.0"})
+    return json.loads(r.text or "{}")
+
+
+def _tg_http_urllib(params):
+    import ssl
+    ctx = None
+    if not TG_VERIFY_SSL:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(_tg_url(params),
+                                headers={"User-Agent": "PremiumIDStoreBot/4.0"})
+    with urllib.request.urlopen(req, timeout=TG_HTTP_TIMEOUT, context=ctx) as resp:
         return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def _tg_http(params):
+    """Ek call — pehle requests, fail hone par urllib."""
+    try:
+        try:
+            return _tg_http_requests(params)
+        except ImportError:
+            pass
+        except Exception as e:                      # requests fail → urllib try karo
+            err = e
+            try:
+                return _tg_http_urllib(params)
+            except Exception:
+                raise err
+    except Exception:
+        return _tg_http_urllib(params)
 
 
 def srv_api_key(code=None):
@@ -127,15 +170,61 @@ async def tg_api(action, key=None, **params):
     """
     p = {"apiKey": key or srv_api_key(), "action": action}
     p.update({k: v for k, v in params.items() if v is not None})
-    try:
-        return await asyncio.to_thread(_tg_http, p)
-    except urllib.error.HTTPError as e:
+    last = {"status": "error", "success": False, "message": "unknown"}
+    for attempt in range(max(1, int(TG_HTTP_RETRIES))):
         try:
-            return json.loads(e.read().decode("utf-8", "replace"))
-        except Exception:
-            return {"status": "error", "success": False, "message": f"HTTP {e.code}"}
-    except Exception as e:
-        return {"status": "error", "success": False, "message": str(e)}
+            res = await asyncio.to_thread(_tg_http, p)
+            if res.get("status") == "ok":
+                db["tgshark"]["last_api_ok"] = time.time()
+                db["tgshark"]["api_fail_streak"] = 0
+                return res
+            msg = str(res.get("message") or "")
+            # sirf server-side / bhari load wale errors par retry
+            if not any(w in msg.lower() for w in ("gateway", "timeout", "temporar",
+                                                  "unavailable", "try again", "502", "503",
+                                                  "504", "rate")):
+                return res
+            last = res
+        except urllib.error.HTTPError as e:
+            try:
+                body = json.loads(e.read().decode("utf-8", "replace"))
+            except Exception:
+                body = {"status": "error", "success": False, "message": f"HTTP {e.code}"}
+            if e.code not in (429, 500, 502, 503, 504):        # 401/402/403/404 → retry bekar
+                return body
+            last = body
+        except Exception as e:                                  # timeout / network
+            last = {"status": "error", "success": False,
+                    "message": f"{type(e).__name__}: {e}"}
+        if attempt + 1 < max(1, int(TG_HTTP_RETRIES)):
+            await asyncio.sleep(0.8 * (2 ** attempt))            # 0.8s, 1.6s, 3.2s
+    db["tgshark"]["last_api_error"] = str(last.get("message") or "")
+    db["tgshark"]["api_fail_streak"] = int(db["tgshark"].get("api_fail_streak") or 0) + 1
+    asyncio.create_task(_api_fail_alert(action, str(last.get("message") or "")))
+    return last
+
+
+async def _api_fail_alert(action, msg):
+    """Lagataar 3 baar fail → admins + GC ko ek baar alert (spam nahi)."""
+    try:
+        streak = int(db["tgshark"].get("api_fail_streak") or 0)
+        last_at = float(db["tgshark"].get("api_fail_alert_at") or 0)
+        if streak < 3 or time.time() - last_at < 1800:
+            return
+        db["tgshark"]["api_fail_alert_at"] = time.time()
+        txt = (f"{E('warn')} <b>API connect fail</b> — <code>{esc(action)}</code>\n"
+               f"━━━━━━━━━━━━━━━━━━\n"
+               f"❌ <code>{esc(msg[:120])}</code>\n"
+               f"🔁 {streak} baar koshish ki, sab fail.\n\n"
+               f"🔍 <code>/apiprobe</code> chalao — asli wajah bata dega.")
+        await log_event(txt)
+        for a in dict.fromkeys(list(db.get("admins", [])) + OWNER_IDS):
+            try:
+                await safe_send(a, txt)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 # Country dial codes (list me +91 jaisa code dikhane ke liye)

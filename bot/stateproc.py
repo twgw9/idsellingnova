@@ -456,6 +456,25 @@ async def _state_chain(client, message, uid, st, state, text):
         user_states.pop(uid, None)
         await message.reply_text(f"✅ Force-join <b>{esc(text)}</b> added — /start will really verify membership.")
 
+    # ---------- ADMIN: deposit me CUSTOM AMOUNT ----------
+    if isinstance(state, str) and state.startswith("DEP_AMT_"):
+        ref = state[8:]
+        raw = (text or "").strip().replace("₹", "").replace(",", "")
+        m = re.search(r"\d+", raw)
+        if not m:
+            return await message.reply_text("❌ Sirf number likhein (jaise 35). /stop = cancel")
+        amt = int(m.group(0))
+        if amt <= 0 or amt > 100000:
+            return await message.reply_text("❌ Amount 1 se 100000 ke beech ho.")
+        user_states.pop(uid, None)
+        ok = await settle_deposit(None, ref, True, message.from_user.first_name or "Admin",
+                                  credit_override=amt)
+        if ok:
+            return await message.reply_text(
+                f"✅ <b>₹{amt}</b> credit kar diya (Ref <code>{ref}</code>).\n"
+                f"User ko balance update bhej diya gaya.")
+        return await message.reply_text("❌ Ye payment pehle hi process ho chuka tha.")
+
     # ---------- BROADCAST ----------
     elif state == "BC_MSG":
         st["bc_msg_id"] = message.id
@@ -556,7 +575,8 @@ async def forward_screenshot_to_verifiers(ref, dep, message):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Approve", callback_data=f"dep_app_{ref}"),
          InlineKeyboardButton("❌ Reject", callback_data=f"dep_rej_{ref}")],
-        [InlineKeyboardButton("💬 Message User", callback_data=f"dep_msg_{ref}")],
+        [InlineKeyboardButton("💬 Message User", callback_data=f"dep_msg_{ref}"),
+         InlineKeyboardButton("🚫 Ban User", callback_data=f"dep_ban_{ref}")],
     ])
     if db.get("verify_mode", "channel") == "channel" and db.get("pay_group"):
         targets = [db["pay_group"]]

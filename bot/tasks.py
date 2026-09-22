@@ -141,11 +141,12 @@ def build_aged_cats(srv, code, countries):
     tiles = {}
     for i, cat in enumerate(cats, 1):
         key = f"CAT:{i}"
-        if cat.get("cost"):                 # category ka apna supplier cost (USD)
-            price = tg_sell_price(float(cat["cost"]), price_key(code, key))
-        else:                               # admin ne seedha ₹ price diya → wahi
-            price = int(cat.get("price") or 0) or tg_sell_price(pool_cost, price_key(code, key))
-        price = max(price, int(tg_sell_price(pool_cost, price_key(code, key))))
+        # asli pool ka bhav — supplier se hamesha pool ka sabse sasta number milta hai,
+        # isliye har tile ka price wahi hota hai (admin chahe to alag de: /agedcat price)
+        price = int(cat.get("price") or 0) or tg_sell_price(pool_cost, price_key(code, key))
+        step = int(srv.get("aged_cats_step") or 0)
+        if step:
+            price += step * (i - 1)
         tiles[key] = {"api": True, "iso": pool_iso,
                       "display": str(cat.get("label") or f"Aged {i}"),
                       "tags": db.get("default_tags", DEFAULT_TAGS), "ids": [],
@@ -264,7 +265,7 @@ async def tg_sync_stock(code=None):
 
 async def tg_sync_all():
     """Sabhi supplier servers (Server 1 = new, Server 2 = old) sync karo."""
-    codes = [c for c in server_codes() if srv_is_api(get_server(c))] or [api_server_code()]
+    codes = [c for c in visible_server_codes() if srv_is_api(get_server(c))] or [api_server_code()]
     total, lines = 0, []
     for c in codes:
         srv = get_server(c) or {}

@@ -234,6 +234,14 @@ async def apply_branding():
 def server_codes():
     return [c for c in db.get("server_order", []) if c in db.get("servers", {})]
 
+def server_is_off(srv):
+    """Server band hai? (/serveroff s2) — buyers ko dikhega nahi, sync bhi band."""
+    return bool(srv and (srv.get("off") or srv.get("hidden")))
+
+def visible_server_codes():
+    """Sirf wahi servers jo buyers ko dikhne chahiye (band wale chhup jayein)."""
+    return [c for c in server_codes() if not server_is_off(db["servers"].get(c))]
+
 def get_server(code):
     return db.get("servers", {}).get(code)
 
@@ -341,6 +349,45 @@ def country_price(country_obj, key=None):
         return stored if stored > 0 else tg_sell_price(country_obj.get("api_cost", 0), key)
     return int(country_obj.get("price", 0) or 0)
 
+def precheck_on():
+    """Kharidne se theek pehle API se bhav dobara check karein? (nuksan se bachav)."""
+    v = (db.get("tgshark") or {}).get("precheck")
+    return bool(TGSHARK_PRECHECK if v is None else v)
+
+
+async def live_min_cost(srv, cobj, timeout=6.0):
+    """Is country ka ABHI ka sabse sasta bhav (USD) — None = pata nahi chala."""
+    iso = str(cobj.get("iso") or "").upper()
+    if not iso:
+        return None
+    try:
+        res = await asyncio.wait_for(
+            tg_api("getCountrys", key=srv_api_key(),
+                   server=int(srv.get("tg_server") or 0) or None),
+            timeout=timeout)
+    except Exception:
+        return None
+    if res.get("status") != "ok":
+        return None
+    for c in res.get("countries") or []:
+        if str(c.get("iso") or c.get("country") or "").upper() == iso:
+            try:
+                return float(c.get("min_price") or 0)
+            except Exception:
+                return None
+    return None
+
+
+def buyer_country_list(srv):
+    """Buyer ko dikhne wali list — /hidemix se chhupayi gayi entries nahi aayengi."""
+    names = country_list(srv)
+    if srv and srv.get("hide_mix"):
+        names = [n for n in names
+                 if not (srv["countries"][n].get("pool") == "global"
+                         or str(srv["countries"][n].get("iso") or "").upper() == "XX")]
+    return names
+
+
 def min_profit_inr():
     """Har sale me kam se kam itna ₹ profit chahiye (admin /setminprofit se badal sakta hai)."""
     v = (db.get("tgshark") or {}).get("min_profit")
@@ -444,15 +491,42 @@ MAIN_LABELS = {"🛒 Products", "👤 Profile", "💳 Deposit", "📞 Support",
 
 def main_kb(uid):
     kb = [
-        ["🛒 Products"],
-        ["👤 Profile", "💳 Deposit"],
-        ["📞 Support"],
+        ["🛒 Products", "👤 Profile"],
+        ["💳 Deposit", "📦 My IDs"],
+        ["📢 Channels", "📞 Support"],
     ]
     if is_admin(uid):
         kb.append(["🛠️ Admin Panel", "📖 Admin Help"])
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
+
+def channels_kb():
+    """Force-join + home channels — ek hi jagah (📢 Channels button)."""
+    rows = []
+    for ch in (db.get("fsub") or []):
+        link = (ch.get("link") or "").strip()
+        if link:
+            rows.append([InlineKeyboardButton(f"🔔 {ch.get('name', 'Channel')}", url=link)])
+    hk = home_channel_kb()
+    if hk:
+        rows.extend(hk.inline_keyboard)
+    return InlineKeyboardMarkup(rows) if rows else None
+
 SERVER_EMOJI = ["🟢", "🟣", "", "🔵", "🟡", "", "️", ""]
+
+def home_header(uid=None):
+    """Home screen ka upper hissa — brand + wallet + fast facts."""
+    line = ""
+    if uid:
+        try:
+            line = f"\n{E('card')} Wallet: <b>{cur()}{balance_of(uid)}</b>  " \
+                   f"•  {E('bolt')} Instant OTP\n"
+        except Exception:
+            line = ""
+    return (f"{E('crown')} <b>Welcome to {esc(bot_name())}</b> {E('crown')}\n"
+            f"━━━━━━━━━━━━━━━━━━"
+            + line)
+
 
 def server_emoji(idx):
     return SERVER_EMOJI[idx % len(SERVER_EMOJI)]

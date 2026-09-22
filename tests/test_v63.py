@@ -359,6 +359,303 @@ async def main():
           str(db["servers"]["s1"]["countries"]["BD"]["price"]))
 
     print("\n" + "=" * 72)
+    print("TEST L — SERVER ON/OFF + aged tiles ki sahi pricing")
+    db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "", "countries": {},
+                           "source": "tgshark", "sync": True, "tg_server": 2,
+                           "uplift_pct": 15.0}
+    m12 = make_msg("/serveroff s2", r"(?i)^/serveroff\s+(\w+)\s*$")
+    await bot.cmd_serveroff(None, m12)
+    check("serveroff → buyers se chhup gaya", "s2" not in bot.visible_server_codes(),
+          str(bot.visible_server_codes()))
+    check("serveroff → sync band", db["servers"]["s2"].get("sync") is False)
+    m13 = make_msg("/servers", r"(?i)^/servers\s*$")
+    await bot.cmd_servers(None, m13)
+    check("/servers me BAND dikhaya", any("BAND" in t for t in m13.sent), str(m13.sent[:1])[:80])
+    m14 = make_msg("/serveron s2", r"(?i)^/serveron\s+(\w+)\s*$")
+    await bot.cmd_serveron(None, m14)
+    check("serveron → wapas dikhne laga", "s2" in bot.visible_server_codes())
+    # --- aged tiles: sabka price ASLI pool ke barabar (220 wali mehngi pricing nahi)
+    m15 = make_msg("/agedcat preset", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m15)
+    tiles = {k: c for k, c in db["servers"]["s2"]["countries"].items()
+             if str(k).startswith("CAT:")}
+    prices = sorted({c["price"] for c in tiles.values()})
+    check("sabhi aged tiles ka price EK jaisa (pool bhav)", len(prices) == 1, str(prices))
+    check("tile price 3-4 digit nahi (mehnga nahi)", prices and prices[0] < 200, str(prices))
+    m16 = make_msg("/agedcat flat 90", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m16)
+    prices2 = {c["price"] for k, c in db["servers"]["s2"]["countries"].items()
+               if str(k).startswith("CAT:")}
+    check("/agedcat flat 90 → sab 90", prices2 == {90}, str(sorted(prices2)))
+    m17 = make_msg("/agedcat step 10", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m17)
+    p3 = [c["price"] for k, c in sorted(
+        [(k, c) for k, c in db["servers"]["s2"]["countries"].items()
+         if str(k).startswith("CAT:")],
+        key=lambda kv: int(str(kv[0]).split(":")[-1]))]
+    check("/agedcat step 10 → price badhte gaye",
+          len(p3) > 2 and p3[0] < p3[1] < p3[2] and p3[1] - p3[0] == 10, str(p3[:4]))
+    m18 = make_msg("/agedcat clear", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m18)
+    patch_global("tg_api", fake_tg_api)
+
+    print("\n" + "=" * 72)
+    print("TEST M — API RETRY + pre-buy cost check + /hidemix")
+    import importlib
+    sup = importlib.reload(bot.supplier)          # asli supplier module (patched copy nahi)
+    calls = {"n": 0}
+
+    def flaky(params):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            import urllib.error
+            raise urllib.error.HTTPError(bot.TGSHARK_BASE, 502, "Bad Gateway", {}, None)
+        return {"status": "ok", "balance": 0.16}
+
+    sup._tg_http = flaky
+    res = await sup.tg_api("getBalance")
+    check("502 par retry karke connect ho gaya", res.get("status") == "ok",
+          f"{calls['n']} attempts → {res}")
+    check("retry sach me hui", calls["n"] == 3, f"{calls['n']} calls")
+
+    calls2 = {"n": 0}
+
+    def bad_key(params):
+        calls2["n"] += 1
+        import urllib.error
+        raise urllib.error.HTTPError(bot.TGSHARK_BASE, 401, "Unauthorized", {}, None)
+
+    sup._tg_http = bad_key
+    res2 = await sup.tg_api("getBalance")
+    check("401 par retry nahi (bekar nahi ghuma)", calls2["n"] == 1, f"{calls2['n']} calls")
+    importlib.reload(bot.supplier)                # sab kuch wapas
+    patch_global("tg_api", fake_tg_api)
+
+    async def spy_live(action, key=None, **pr):
+        if action == "getCountrys":
+            return {"status": "ok", "countries": [{"iso": "XX", "count": 10,
+                                                   "min_price": 2.0, "max_price": 2.0}]}
+        return await fake_tg_api(action, key=key, **pr)
+
+    patch_global("tg_api", spy_live)
+    srv = db["servers"]["s2"]
+    srv["countries"]["XX"] = {"api": True, "iso": "XX", "display": "Aged Mix",
+                             "api_count": 10, "api_cost": 0.45, "price": 60, "ids": []}
+    live = await bot.live_min_cost(srv, srv["countries"]["XX"])
+    check("live cost check → bhav ₹200 wala pakda", live == 2.0, str(live))
+    check("precheck default ON", bot.precheck_on() is True)
+    db["tgshark"]["precheck"] = False
+    check("precheck off kiya ja sakta hai", bot.precheck_on() is False)
+    db["tgshark"]["precheck"] = True
+    patch_global("tg_api", fake_tg_api)
+
+    # --- /hidemix: random pool (XX) buyers se chhup jaye
+    s1 = db["servers"]["s1"]
+    s1.setdefault("countries", {})["XX"] = {"api": True, "iso": "XX", "display": "Global Mix",
+                                           "api_count": 5, "api_cost": 0.2, "price": 25,
+                                           "ids": [], "pool": "global"}
+    before = len(bot.buyer_country_list(s1))
+    m19 = make_msg("/hidemix s1 on", r"(?i)^/hidemix\s+(\w+)\s*(on|off)?\s*$")
+    await bot.cmd_hidemix(None, m19)
+    after = len(bot.buyer_country_list(s1))
+    check("/hidemix on → random pool list se gaya",
+          after == before - 1 and "XX" not in bot.buyer_country_list(s1),
+          f"{before} → {after}")
+    m20 = make_msg("/hidemix s1 off", r"(?i)^/hidemix\s+(\w+)\s*(on|off)?\s*$")
+    await bot.cmd_hidemix(None, m20)
+    check("/hidemix off → wapas aa gaya", "XX" in bot.buyer_country_list(s1))
+
+    print("\n" + "=" * 72)
+    print("TEST N — BAN BUTTON + FORCE JOIN (pending request bhi verified)")
+    # --- ban button: payment request screen par hai?
+    import bot.stateproc as SP
+    src = open(os.path.join(os.path.dirname(__file__), "..", "bot", "stateproc.py"),
+                      encoding="utf-8").read()
+    check("payment screen me 🚫 Ban User button hai", "dep_ban_" in src)
+    cb = open(os.path.join(os.path.dirname(__file__), "..", "bot", "callbacks.py"),
+                     encoding="utf-8").read()
+    check("ban callback routed hai (click kaam karega)",
+          "dep_ban_" in cb and "dep_banc_" in cb)
+
+    # --- force join: pending request → verified
+    db["fsub"] = [{"chat_id": "@testchan", "link": "https://t.me/testchan", "name": "Test"}]
+    db["fsub_mode"] = "lenient"
+    db.pop("fsub_ok", None)
+
+    class FakeClient:
+        async def get_chat_member(self, chat_id, uid):
+            raise UserNotParticipant("pending")
+
+        async def resolve_peer(self, chat_id):
+            return object()
+
+        async def invoke(self, *a, **kw):
+            class R:
+                users = [type("U", (), {"id": 555})()]
+            return R()
+
+    class MemberClient(FakeClient):
+        async def get_chat_member(self, chat_id, uid):
+            return type("M", (), {"status": "member"})()
+
+    st_member = await bot.fsub_state(MemberClient(), "@testchan", 555)
+    check("member pehchana gaya", st_member == "member", st_member)
+    ok = await bot.check_fsub(MemberClient(), 555)
+    check("pakka member → koi gate nahi", ok is True, str(ok))
+
+    db.pop("fsub_ok", None)
+    blocked = await bot.check_fsub(FakeClient(), 555)      # join nahi kiya / pending
+    check("join nahi kiya → gate dikhega", blocked is not True)
+
+    # Verify click par lenient mode me andar mil jata hai (pending request wale ke liye)
+    db.pop("fsub_ok", None)
+    check("lenient mode hai", bot.fsub_lenient() is True)
+    bot.fsub_mark_ok(555)
+    check("Verify ke baad andar (pending ho to bhi)",
+          await bot.check_fsub(FakeClient(), 555) is True)
+    db["fsub_mode"] = "strict"
+    db.pop("fsub_ok", None)
+    strict_block = await bot.check_fsub(FakeClient(), 555)
+    check("strict mode → block", strict_block is not True)
+    db["fsub_mode"] = "lenient"
+    db.pop("fsub_ok", None)
+
+    # --- auto force-join: naya channel add hote hi
+    db["fsub"] = []
+    db["auto_fsub"] = True
+    db["home_channels"] = []
+    m21 = make_msg("/addchannel Sales | https://t.me/saleschan",
+                   r"(?i)^/addchannel\s+(.+)$")
+    await bot.cmd_addchannel(None, m21)
+    check("naya channel auto force-join me gaya",
+          any(str(c.get("chat_id")) == "@saleschan" for c in db.get("fsub", [])),
+          str(db.get("fsub")))
+    added = bot.auto_fsub_add("", name="Dup", url="https://t.me/saleschan")
+    check("duplicate dobara add nahi hua", added is False and len(db["fsub"]) == 1)
+
+    # --- gate: normal click par lagega, kharidari ke beech me nahi
+    db["fsub"] = [{"chat_id": "@c", "link": "https://t.me/c", "name": "C"}]
+    db.pop("fsub_ok", None)
+    db["sold_sessions"] = {}
+    check("normal click (home) par gate lagega", bot.fsub_gate_needed(555, "home") is True)
+    check("buy karte waqt gate nahi", bot.fsub_gate_needed(555, "buy_s2_0_0") is False)
+    check("OTP ke beech gate nahi", bot.fsub_gate_needed(555, "otp_new_AB12") is False)
+    check("admin verify ke beech gate nahi", bot.fsub_gate_needed(555, "dep_app_X1") is False)
+    db["sold_sessions"]["S1"] = {"uid": 555, "status": "waiting_otp",
+                                 "sold_at": __import__("time").time()}
+    check("purchase flow chalu → home par bhi gate nahi",
+          bot.fsub_gate_needed(555, "home") is False)
+    db["sold_sessions"] = {}
+    patch_global("tg_api", fake_tg_api)
+
+    print("\n" + "=" * 72)
+    print("TEST O — CUSTOM AMOUNT + double-credit guard + pending request")
+    # --- deposit: custom amount (user ne 25 bole, 35 bheje → admin 35 credit kare)
+    db["pending_deposits"] = {"R1": {"uid": 4242, "amount": 25, "bonus": 0, "time": bot.now_str(),
+                                     "group_msgs": {}}}
+    db["processed_deposits"] = {}
+    db["users"]["4242"] = {"balance": 0, "name": "Tester"}
+    db["sold_sessions"] = {}
+    done = await bot.settle_deposit(None, "R1", True, "Admin", credit_override=35)
+    check("custom amount credit hua", db["users"]["4242"]["balance"] == 35,
+          str(db["users"]["4242"]["balance"]))
+    check("deposit log me custom flag",
+          any(d.get("custom") for d in db.get("deposit_log", [])))
+    # --- do baar credit NAHI hona chahiye
+    again = await bot.settle_deposit(None, "R1", True, "Admin2", credit_override=35)
+    check("do baar credit nahi hua", again is False and db["users"]["4242"]["balance"] == 35,
+          str(db["users"]["4242"]["balance"]))
+    # --- normal amount (requested + bonus)
+    db["pending_deposits"] = {"R2": {"uid": 4242, "amount": 100, "bonus": 5,
+                                     "time": bot.now_str(), "group_msgs": {}}}
+    await bot.settle_deposit(None, "R2", True, "Admin")
+    check("normal deposit: amount + bonus", db["users"]["4242"]["balance"] == 140,
+          str(db["users"]["4242"]["balance"]))
+    # --- reject par credit nahi
+    db["pending_deposits"] = {"R3": {"uid": 4242, "amount": 50, "bonus": 0,
+                                     "time": bot.now_str(), "group_msgs": {}}}
+    await bot.settle_deposit(None, "R3", False, "Admin")
+    check("reject par kuch credit nahi", db["users"]["4242"]["balance"] == 140,
+          str(db["users"]["4242"]["balance"]))
+
+    # --- pending join request: Bot API se approve (sach me detect)
+    async def fake_bot_api(method, **pr):
+        fake_bot_api.calls.append((method, pr))
+        if method == "approveChatJoinRequest" and pr.get("user_id") == 555:
+            return {"ok": True, "result": True}          # pending thi → approve ho gayi
+        return {"ok": False, "description": "Bad Request: HIDE_REQUESTER_MISSING"}
+    fake_bot_api.calls = []
+    patch_global("bot_api", fake_bot_api)
+    got = await bot.try_join_requests("@chan", 555)
+    check("pending request pakdi + approve hui", got is True, str(got))
+    got2 = await bot.try_join_requests("@chan", 999)
+    check("pending nahi → False", got2 is False, str(got2))
+    async def no_admin(method, **pr):
+        return {"ok": False, "description": "Bad Request: CHAT_ADMIN_REQUIRED"}
+    patch_global("bot_api", no_admin)
+    got3 = await bot.try_join_requests("@chan", 555)
+    check("bot admin nahi → None (lenient)", got3 is None, str(got3))
+    async def no_token(method, **pr):
+        return None
+    patch_global("bot_api", no_token)
+    check("token na ho → None", await bot.try_join_requests("@chan", 555) is None)
+    patch_global("tg_api", fake_tg_api)
+
+    # --- lossreport command maujood
+    src_g = open(os.path.join(os.path.dirname(__file__), "..", "bot", "growth.py"),
+                 encoding="utf-8").read()
+    check("/lossreport hai", "lossreport" in src_g)
+    check("/credit hai", "cmd_credit" in src_g)
+
+    print("\n" + "=" * 72)
+    print("TEST P — REPORT + Channels/Home buttons + /apiprobe")
+    db["sales"] = [
+        {"sale_id": "S1", "uid": 111, "code": "s1", "server": "Server 1", "country": "BD",
+         "price": 35, "number": "+880", "time": bot.now_str(), "api": True},
+        {"sale_id": "S2", "uid": 222, "code": "s2", "server": "Server 2", "country": "Aged",
+         "price": 130, "number": "+91", "time": bot.now_str(), "api": True},
+    ]
+    db["sold_sessions"] = {"S1": {"uid": 111, "cost_usd": 0.30, "status": "otp_sent"},
+                           "S2": {"uid": 222, "cost_usd": 1.00, "status": "otp_sent"}}
+    db["pending_deposits"] = {"P1": {"uid": 333, "amount": 50}}
+    m22 = make_msg("/report", r"(?i)^/report\s*$")
+    await bot.cmd_report(None, m22)
+    rep = " ".join(m22.sent)
+    check("/report chala", "STORE REPORT" in rep, rep[:60])
+    check("report me sales count", "2 sales" in rep or "sales" in rep)
+    check("report me revenue ₹165", "165" in rep, [w for w in rep.split() if "165" in w][:2])
+    check("report me profit", "Profit" in rep)
+    check("report me pending deposits", "Pending deposits" in rep)
+    db["sales"], db["sold_sessions"], db["pending_deposits"] = [], {}, {}
+
+    # --- UI buttons
+    kb = bot.main_kb(7839547993)
+    flat = [b for row in kb.keyboard for b in row]
+    check("menu me Products hai", any("Products" in b for b in flat))
+    check("menu me Profile/Deposit/My IDs hain",
+          any("Profile" in b for b in flat) and any("Deposit" in b for b in flat)
+          and any("My IDs" in b for b in flat))
+    check("menu me 📢 Channels button", any("Channels" in b for b in flat), str(flat))
+    check("menu me Support hai", any("Support" in b for b in flat))
+    db["fsub"] = [{"chat_id": "@c1", "link": "https://t.me/c1", "name": "Main"}]
+    ckb = bot.channels_kb()
+    check("channels_kb me force-join channel",
+          ckb is not None and any("Main" in b.text for row in ckb.inline_keyboard for b in row))
+    db["fsub"] = []
+
+    # --- /apiprobe + naya HTTP layer
+    src_sp = open(os.path.join(os.path.dirname(__file__), "..", "bot", "supplier.py"),
+                  encoding="utf-8").read()
+    check("requests pehle try hota hai", "_tg_http_requests" in src_sp)
+    check("urllib fallback hai", "_tg_http_urllib" in src_sp)
+    check("SSL verify option hai", "TGSHARK_VERIFY_SSL" in src_sp)
+    check("fail hone par admin alert", "_api_fail_alert" in src_sp)
+    src_gr = open(os.path.join(os.path.dirname(__file__), "..", "bot", "growth.py"),
+                  encoding="utf-8").read()
+    check("/apiprobe hai", "cmd_apiprobe" in src_gr)
+    patch_global("tg_api", fake_tg_api)
+
+    print("\n" + "=" * 72)
     print("TEST G — command menu 100 ke andar")
     check("menu <= 100", len(bot.ADMIN_COMMANDS) <= 100, f"{len(bot.ADMIN_COMMANDS)} commands")
 

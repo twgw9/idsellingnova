@@ -83,8 +83,8 @@ async def start_handler(client, message):
         except Exception:
             text = esc(wt)
     else:
-        text = (f"{E('crown')} <b>Welcome to {esc(bot_name())}!</b> {E('crown')}\n"
-                f"{E('live')} <i>Auto Delivery Enabled</i>  •  {E('bolt')} <i>Instant OTP</i>\n"
+        text = (home_header(uid) + "\n"
+                f"{E('live')} <i>Auto delivery enabled</i> • {E('bolt')} <i>Instant OTP</i>\n"
                 f"{E('gem')} Use the menu below:")
     if db.get("motd"):
         text += f"\n\n📢 <b>{esc(db['motd'])}</b>"
@@ -120,21 +120,41 @@ async def accept_terms_cb(client, query):
     if active_promos():
         return await send_promo_screen(query.message)
     await query.message.reply_text(
-        f"{E('crown')} <b>Welcome to {esc(bot_name())}!</b> {E('crown')}\n"
-        f"{E('live')} <i>Auto Delivery Enabled</i>\n{E('gem')} Use the menu below:",
+        home_header(uid) + "\n"
+        f"{E('live')} <i>Auto delivery enabled</i>\n{E('gem')} Use the menu below:",
         reply_markup=main_kb(uid))
 
 @app.on_callback_query(filters.regex("^fsub_verify$"))
 async def fsub_verify_cb(client, query):
     uid = query.from_user.id
     fsub = await check_fsub(client, uid)
+    # pending join request ho to Bot API se approve karke sach me member bana do
+    if fsub is not True:
+        approved, unknown = True, False
+        for ch in db.get("fsub", []):
+            st = await fsub_state(client, ch["chat_id"], uid)
+            if st in ("member", "pending"):
+                continue
+            got = await try_join_requests(ch["chat_id"], uid)
+            if got is True:
+                continue
+            if got is None:
+                unknown = True
+            else:
+                approved = False
+        if approved:
+            fsub_mark_ok(uid)
+            fsub = True
+        elif unknown and fsub_lenient():
+            fsub_mark_ok(uid)             # bot admin nahi → confirm nahi, par andar
+            fsub = True
     if fsub is True:
         uid_str = str(uid)
         existed = uid_str in db["users"]
         user_record(uid, query.from_user.first_name)
         if not existed:
             await save_db()
-        await ack(query)
+        await ack(query, "✅ Verified — welcome!", show_alert=False)
         if active_promos():
             return await send_promo_screen(query.message)
         try:
@@ -142,13 +162,43 @@ async def fsub_verify_cb(client, query):
         except Exception:
             pass
         await query.message.reply_text(
-            f"{E('crown')} <b>Welcome to {esc(bot_name())}!</b> {E('crown')}\n"
-            f"{E('live')} <i>Auto Delivery Enabled</i>\n{E('gem')} Use the menu below:",
+            home_header(uid) + "\n"
+            f"{E('live')} <i>Auto delivery enabled</i>\n{E('gem')} Use the menu below:",
             reply_markup=main_kb(uid))
     else:
         await ack(query, "❌ You haven't joined yet! Join first, then press Verify.", show_alert=True)
 
 # ================= PRODUCTS FLOW =================
+
+@app.on_message(filters.regex("^📢 Channels$") & filters.private)
+async def channels_handler(client, message):
+    """Menu ka 📢 Channels — force-join + updates wale channels."""
+    kb = channels_kb()
+    if not kb:
+        return await message.reply_text(
+            f"📢 <b>Channels</b>\n━━━━━━━━━━━━━━━━━━\n"
+            f"Abhi koi channel set nahi hai.\n"
+            f"<i>Admin: <code>/addchannel Name | https://t.me/...</code></i>")
+    await message.reply_text(
+        f"📢 <b>Our Channels</b>\n━━━━━━━━━━━━━━━━━━\n"
+        f"Join kar lo — sales, new stock aur offers sabse pehle yahin milte hain 👇",
+        reply_markup=kb)
+
+
+@app.on_message(filters.regex("^🏠 Home$") & filters.private)
+async def home_button_handler(client, message):
+    uid = message.from_user.id
+    user_states.pop(uid, None)
+    await message.reply_text(home_header(uid) + "\n"
+                             f"{E('gem')} Use the menu below:",
+                             reply_markup=main_kb(uid))
+    ch_kb = home_channel_kb()
+    if ch_kb:
+        await message.reply_text(
+            "📢 <b>Join our channels</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "Sales updates, new stock and offers — everything lands here first 👇",
+            reply_markup=ch_kb)
+
 
 @app.on_message(filters.regex("^🛒 Products$") & filters.private)
 async def products_handler(client, message):
@@ -156,7 +206,7 @@ async def products_handler(client, message):
     await send_server_list(message)
 
 async def send_server_list(msg_or_query):
-    codes = server_codes()
+    codes = visible_server_codes()
     home = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Home", callback_data="home")]])
     if not codes:
         return await _edit_or_reply(
@@ -253,6 +303,7 @@ async def send_country_page(msg_or_query, code, page):
     if srv_is_api(srv):
         btns.append([InlineKeyboardButton(f"{E('sync')} Refresh Live Stock",
                                           callback_data=f"tgsync_now_{code}_{page}")])
+    btns.append([InlineKeyboardButton("📢 Channels", callback_data="open_channels")])
     btns.append([InlineKeyboardButton("🏠 Back to Home", callback_data="home")])
     await _edit_or_reply(msg_or_query, text, InlineKeyboardMarkup(btns))
 
@@ -260,7 +311,7 @@ async def send_country_info(msg_or_query, code, cidx, page):
     srv = get_server(code)
     if not srv:
         return await _edit_or_reply(msg_or_query, "❌ Server not found.", None)
-    names = [n for n in country_list(srv) if stock_count(srv["countries"][n]) > 0]
+    names = [n for n in buyer_country_list(srv) if stock_count(srv["countries"][n]) > 0]
     if cidx >= len(names):
         return await send_country_page(msg_or_query, code, page)
     name = names[cidx]
@@ -325,7 +376,7 @@ async def send_buy_confirm(msg_or_query, code, cidx, page):
     srv = get_server(code)
     if not srv:
         return await _edit_or_reply(msg_or_query, "❌ Server not found.", None)
-    names = [n for n in country_list(srv) if stock_count(srv["countries"][n]) > 0]
+    names = [n for n in buyer_country_list(srv) if stock_count(srv["countries"][n]) > 0]
     if cidx >= len(names):
         return await send_country_page(msg_or_query, code, page)
     name = names[cidx]
@@ -477,3 +528,17 @@ async def cmd_help(client, message):
              InlineKeyboardButton("💳 Deposit", callback_data="dep_menu")],
             [InlineKeyboardButton("👤 Profile", callback_data="home_profile"),
              InlineKeyboardButton("🏠 Home", callback_data="home")]]))
+
+
+@app.on_callback_query(filters.regex("^open_channels$"))
+async def open_channels_cb(client, query):
+    await ack(query)
+    kb = channels_kb()
+    if not kb:
+        return await query.message.reply_text(
+            "📢 Abhi koi channel set nahi hai. "
+            "<i>Admin: <code>/addchannel Name | https://t.me/...</code></i>")
+    await query.message.reply_text(
+        "📢 <b>Our Channels</b>\n━━━━━━━━━━━━━━━━━━\n"
+        "Join kar lo — sales, new stock aur offers sabse pehle yahin milte hain 👇",
+        reply_markup=kb)

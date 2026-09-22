@@ -154,7 +154,7 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
         srv = get_server(code)
         if not srv:
             return await ack(query, "❌ Server not found.", show_alert=True)
-        names = [n for n in country_list(srv) if stock_count(srv["countries"][n]) > 0]
+        names = [n for n in buyer_country_list(srv) if stock_count(srv["countries"][n]) > 0]
         if cidx >= len(names):
             return await ack(query, "❌ Stock changed, please select again.", show_alert=True)
         name = names[cidx]
@@ -182,6 +182,16 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
             _cost = float(cobj.get("api_cost", 0) or 0) * float(tg_cfg()["usd_inr"] or 0)
             if _cost > 0 and price <= _cost:
                 return await ack(query, "⚠️ Rates update ho rahe hain — "
+                                        "10 second baad dobara try karein.", show_alert=True)
+        # ---- LIVE COST RE-CHECK: pool ka bhav badh gaya? → sale roko, price refresh karo
+        # (jaise ₹65 wale tile par ₹200 wala number na lag jaye)
+        if api_item and precheck_on():
+            _live = await live_min_cost(srv, cobj)
+            if _live is not None and _live > float(cobj.get("api_cost", 0) or 0) + 1e-9:
+                cobj["api_cost"] = _live
+                cobj["price"] = tg_sell_price(_live, price_key(code, name))
+                await save_db()
+                return await ack(query, "⚠️ Stock refresh ho raha hai — "
                                         "10 second baad dobara try karein.", show_alert=True)
         rec["balance"] = bal - price
         rec["spent"] = rec.get("spent", 0) + price
