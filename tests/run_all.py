@@ -10,7 +10,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SUITES = ["test_flow.py", "test_admin_cmds.py", "test_v5.py", "test_v6.py", "test_v61.py"]
+SUITES = ["test_flow.py", "test_admin_cmds.py", "test_v5.py", "test_v6.py",
+          "test_v61.py", "test_v63.py"]
 ok = "\033[92mPASS\033[0m"
 bad = "\033[91mFAIL\033[0m"
 

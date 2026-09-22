@@ -119,7 +119,8 @@ async def api_otp_watcher(sale_id, uid, delay=0):
             uid,
             f"{E('clock')} <b>OTP wait timed out</b> "
             f"({int(db.get('otp_timeout_min', 15))} min)\n"
-            f"{E('phone')} Number: <code>{esc(sd.get('number', ''))}</code>\n\n"
+            f"{E('phone')} {iso_flag(sd.get('iso'))} {esc(sd.get('label', ''))} • "
+            f"<code>{esc(sd.get('number', ''))}</code>\n\n"
             f"Request a login code on this number in Telegram and tap "
             f"<b>🔄 Request New OTP</b>, or contact support.",
             reply_markup=otp_kb(sale_id, api=True))
@@ -270,7 +271,8 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
             f"━━━━━━━━━━━━━━━━━━\n\n"
             f"<b>Order Details:</b>\n"
             f"🆔 Order: <code>{sale_id}</code>\n"
-            f"{E('phone')} Number: <code>{esc(sd.get('number', ''))}</code>\n"
+            f"{E('phone')} {iso_flag(sd.get('iso'))} {esc(sd.get('label', ''))} • "
+            f"<code>{esc(sd.get('number', ''))}</code>\n"
             f"{E('money')} Paid: {cur()}{price}\n"
             f"{E('card')} Balance: {cur()}{balance_of(uid)}\n\n"
             f"{E('bolt')} <b>Auto OTP Delivery</b>\n"

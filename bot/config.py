@@ -112,6 +112,43 @@ TGSHARK_BASE = env("TGSHARK_BASE", "https://tgsharkapi.store/api/v1")
 #     Khali chhodoge to bot clear error dega: "Supplier API key set nahi hai".
 TGSHARK_API_KEY = env("TGSHARK_API_KEY", "")
 
+# Server 2 (OLD supplier account) ki apni key — har account ki key alag hoti hai
+TGSHARK_API_KEY_S2 = env("TGSHARK_API_KEY_S2", "")
+# Owner ka private log group/channel: naye user, sales, deposits ki copy yahan jayegi
+LOG_GROUP = env("LOG_GROUP", "")
+# Aged (Server 2) accounts par kitna EXTRA margin — purane numbers mehenge bikte hain
+AGED_UPLIFT_PCT = env_float("AGED_UPLIFT_PCT", 25.0)
+# Country list me ek page par kitne countries (zyada = kam pages)
+COUNTRIES_PER_PAGE = env_int("COUNTRIES_PER_PAGE", 20)
+# Global Mix (XX) ke liye disclaimer
+GLOBAL_MIX_NOTE = env(
+    "GLOBAL_MIX_NOTE",
+    "🎲 Random country — isme koi bhi desh ka number mil sakta hai. "
+    "Kisi specific country ya quality ki guarantee nahi, iski responsibility hamari nahi hai.")
+
+# remote shutdown (/shutdown command) — main.py is event ka intezaar karta hai
+_STOP = {"event": None, "loop": None}
+
+
+def register_stop(event, loop=None):
+    _STOP["event"] = event
+    _STOP["loop"] = loop
+
+
+def request_shutdown():
+    ev, loop = _STOP.get("event"), _STOP.get("loop")
+    if ev is None:
+        return False
+    try:
+        if loop is not None:
+            loop.call_soon_threadsafe(ev.set)
+        else:
+            ev.set()
+        return True
+    except Exception:
+        return False
+
+
 TGSHARK_PROFIT_PCT = env_float("TGSHARK_PROFIT_PCT", 10.0)   # fallback flat %
 TGSHARK_USD_INR = env_float("TGSHARK_USD_INR", 88.0)         # 1 USD = ₹88
 TGSHARK_ROUND_TO = env_int("TGSHARK_ROUND_TO", 5)            # round-up ₹5

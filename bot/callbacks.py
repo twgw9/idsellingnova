@@ -48,6 +48,12 @@ async def callback_router(client, query: CallbackQuery):
             pass
         await query.message.reply_text(f"{E('sparkle')} <b>{esc(bot_name())}</b> — main menu 👇",
                                        reply_markup=main_kb(uid))
+        ch_kb = home_channel_kb()
+        if ch_kb:
+            await query.message.reply_text(
+                f"📢 <b>Join our channels</b>\n━━━━━━━━━━━━━━━━━━\n"
+                f"Sales updates, new stock aur offers sabse pehle yahin milte hain 👇",
+                reply_markup=ch_kb)
         return
 
     if data == "home_products":
@@ -70,6 +76,29 @@ async def callback_router(client, query: CallbackQuery):
         _, code, page = data.split("_")
         await ack(query)
         return await send_country_page(query, code, int(page))
+
+    if data.startswith("ratecard_"):
+        _, code, page = data.split("_")
+        await ack(query)
+        srv = get_server(code)
+        if not srv:
+            return await ack(query, "❌ Server not found.", show_alert=True)
+        rows = []
+        for nm in country_list(srv):
+            cobj = srv["countries"][nm]
+            iso = (cobj.get("iso") or nm).upper()
+            dial = f"+{iso_dial(iso)} " if iso_dial(iso) else ""
+            nm_show = "Global Mix" if iso == "XX" else f"{iso} {dial}".strip()
+            rows.append(f"{cflag(srv, nm)} <b>{esc(nm_show)}</b> — {cur()}{country_price(cobj)} "
+                        f"({stock_label(stock_count(cobj), short=True)})")
+        if not rows:
+            return await ack(query, "❌ Is server me abhi koi country nahi.", show_alert=True)
+        head = (f"💎 <b>RATE CARD — {esc(srv['name'])}</b>\n━━━━━━━━━━━━━━━━━━\n")
+        for i in range(0, len(rows), 40):                 # 4096-char limit safe
+            chunk = rows[i:i + 40]
+            await query.message.reply_text(head + "\n".join(chunk) if i == 0
+                                           else "\n".join(chunk))
+        return
 
     if data.startswith("cid_"):
         _, code, cidx, page = data.split("_")

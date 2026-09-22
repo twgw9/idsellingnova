@@ -36,7 +36,7 @@ from .startup import *        # convenience: `from bot import *` sab kuch de de
 from .stateproc import _state_chain              # noqa: E402,F401
 from .startup import _try_set_admin_commands     # noqa: E402,F401
 
-__version__ = "6.2.1"
+__version__ = "6.3.2"
 _MODULES = ["config", "db", "emoji", "pricing", "supplier", "helpers", "fsub", "user",
             "deposit", "purchase", "otp", "admin_cb", "admin_cmds", "pricing_cmds",
             "growth", "stateproc", "callbacks", "tasks", "menus", "startup"]

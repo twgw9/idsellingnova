@@ -1,0 +1,55 @@
+# =============================================================================
+#  BotFather profile text — copy/paste kar do (@BotFather → /mybots → apna bot)
+#  DP image: assets/bot_dp.png  (BotFather me /setuserpic se lagao)
+# =============================================================================
+
+# ---------------- /setname (bot ka display name) ----------------
+Nova ID Store ⚡
+
+# ---------------- /setdescription (bot open karte hi upar dikhta hai) ----------------
+⚡ Instant Telegram accounts with auto OTP delivery.
+💎 24+ countries • live stock • best rates
+🤖 Fully automatic — buy, get number, receive OTP, done.
+💳 UPI / QR deposit with instant approval
+🛡️ Auto-refund if OTP doesn't arrive
+Join our channel for stock & offer updates 👇
+
+# ---------------- /setabouttext (short bio) ----------------
+Instant Telegram accounts — auto OTP, live stock, instant delivery. 24/7 automatic.
+
+# ---------------- /setcommands (agar kabhi menu reset karna ho) ----------------
+start - Start the bot & main menu
+profile - Balance, referrals, my IDs
+deposit - Add balance (UPI / QR)
+support - Contact support
+
+# =============================================================================
+#  ANDARUNA texts (bot ke andar admin se set kar sakte ho — command dikhaye hain)
+# =============================================================================
+
+# Branding
+/setbrandname Nova ID Store
+/setabout Instant Telegram accounts with auto OTP delivery.
+
+# Store text
+/setsupport @krishnamishra0001
+/setbuynote Please use Plus Messenger / Graph Manager to login.
+
+# Home screen par channels (screenshot jaisa)
+/addchannel 📢 Sales Updates | https://t.me/iddatabase10
+/addchannel 📦 Stock & Offers | https://t.me/iddatabase10
+/channels                      ← list dekhne ke liye
+
+# Do servers — har ek ki apni supplier key
+/serverkeys                    ← kaunsi key kis server par lagi hai
+/setserverkey s1 tgsharkapi-XXXXXXXX     ← NEW account ki key
+/setserverkey s2 tgsharkapi-YYYYYYYY     ← OLD account ki key
+/syncall                       ← dono servers ka stock ek saath refresh
+
+# Owner ke liye
+/shutdown                      ← bot remote band (keepalive dobara start nahi karega)
+/banned                        ← banned users ki list
+/ban <id>  •  /unban <id>
+
+# Log group (.env me) 
+LOG_GROUP=@iddatabase10        ← naye user / sales / deposits ki copy yahan aayegi

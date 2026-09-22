@@ -20,6 +20,7 @@ async def _run_bot():
     await load_db()
     await app.start()
     _main_stop = asyncio.Event()
+    register_stop(_main_stop, asyncio.get_running_loop())
     _install_signals()
     await post_start_init()
     bg = [asyncio.create_task(cleanup_signins()),
@@ -73,10 +74,10 @@ def main():
             break
         except Exception:
             crashes += 1
-            logging.exception("Fatal error (restart %s/3 in 5s)", crashes)
-            if not _bot_ready or crashes >= 3:
+            logging.exception("Fatal error (restart %s/10 in 10s)", crashes)
+            if not _bot_ready or crashes >= 10:
                 break
-            time.sleep(5)
+            time.sleep(min(60, 10 * crashes))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,29 @@ tools/           ← static checker
 
 ---
 
+## 🆕 v6.3 me kya naya hai
+
+- **Do servers, dono live** — `Server 1 • New Accounts` aur `Server 2 • Aged Accounts`,
+  dono ek hi API key se sync hote hain (23-23 countries)
+- **Aged server me zyada profit** — Server 2 par auto **+25% premium margin**
+  (`AGED_UPLIFT_PCT`), badlo: `/setservermargin s2 40%` / `s2 +30` / `s2 off`
+  → jaise BD: New ₹35 (profit ₹5) • Aged ₹45 (profit ₹15)
+- **Ek hi API key se dono servers** chalte hain; chahe to alag bhi lagao
+  (`/setserverkey s1 <key>`, `/setserverkey s2 <key>`, `/serverkeys`)
+- **Country list ab market-standard format me** — `🇲🇦 MA +212 • ₹55 (59)`,
+  20 per page, `📋 Rate Card` button se poori rate list
+- **`/syncall`** — dono servers ka stock ek saath refresh (auto bhi hota hai har 15 min)
+- **`/shutdown`** — owner bot ko remote band kar sake (dobara `bash run.sh` se chalega)
+- **Ban system** — deposit panel me 🚫 **Ban User** button, banned user ko
+  "You are banned" + 📞 Contact Support screen, `/ban`, `/unban`, `/banned`
+- **Home par channels** — admin `/addchannel Sales Updates | https://t.me/xxx` se
+  jitne chahe channels laga sake (Home tap karte hi dikhte hain)
+- **Log group** — `.env` me `LOG_GROUP=@iddatabase10` → naye user, sales, deposits ki copy
+- **Global Mix disclaimer** — XX (random country) ke saath "koi guarantee nahi" note
+- **Number ke saath country** — delivery/OTP screen me 🇧🇩 Bangladesh • +91…
+- **alwaysdata keep-alive** — `keepalive.sh` ko Scheduled Task me daalo, bot gire to khud uthega
+- Country list me ab **20 countries per page** (`COUNTRIES_PER_PAGE`), kam text, seedhi baat
+
 ## ✨ Kya kya hai
 
 **Store & buying**
@@ -82,6 +105,10 @@ aur my.telegram.org se `API_ID` / `API_HASH`.
 premium_id_store/
 ├── main.py                  # entry point (start / stop / restart loop)
 ├── run.sh                   # venv + pip + run, ek command me
+├── start.sh                 # run.sh ka shortcut
+├── keepalive.sh             # alwaysdata Scheduled Task — girne par auto-restart
+├── BOT_PROFILE.txt          # BotFather ke liye name/description/about + setup commands
+├── assets/bot_dp.png        # bot ki profile picture
 ├── requirements.txt
 ├── .env.example             # ← copy karke .env banao
 ├── .gitignore
@@ -145,7 +172,8 @@ hoga (abhi ke working values), isliye bot bina `.env` ke bhi chal jayega.
 | `SESSION_NAME` | `premium_id_store` | Pyrogram session file |
 | `TGSHARK_DRY_RUN` | `false` | `true` = demo, koi paisa nahi katega |
 | `TGSHARK_PROFIT_MODE` | `tiers` | `tiers` ya `pct` |
-| `TGSHARK_PROFIT_TIERS` | `[[30,5,0],[100,10,5],[999999,15,0]]` | Slab rule |
+| `TGSHARK_PROFIT_TIERS` | `[[30,5,0],[100,10,5],[999999,15,0]]` | Slab rule (`[upto, value, min_add]` — `min_add>0` = % rule, warna flat ₹) |
+| `TGSHARK_API_KEY` | *(khali)* | Supplier key — **.env me hi daalo** |
 | `TGSHARK_PROFIT_PCT` | `10.0` | Pure-% mode me % |
 | `TGSHARK_ROUND_TO` / `_MODE` | `5` / `ceil` | Price rounding |
 | `TGSHARK_MIN_PRICE` / `_MAX_PRICE` | `10` / `0` | Safety floor / cap (`0` = no cap) |
@@ -176,11 +204,31 @@ Har suite **apni temporary DB** banata hai (live `id_store_db.json` ko chhuta ta
 aur supplier calls dry-run me rehte hain — isliye testing me ek rupya bhi nahi katta.
 Agar project me koi DB nahi hai to harness khud demo stock seed kar deta hai.
 
-Current status: **5/5 suites green** ✅
+Current status: **6/6 suites green** ✅ (sab offline — network/key ki zaroorat nahi)
 
 ---
 
+## 🛠️ Troubleshooting
+
+| Symptom | Matlab | Fix |
+|---|---|---|
+| `❌ API error: Invalid apiKey` | Key galat / dusre account ki / IP-blocked | Server se `curl -s "https://tgsharkapi.store/api/v1?apiKey=$KEY&action=getBalance"` chalao. `status:ok` aaye to key theek hai; `Invalid apiKey` aaye to supplier se naya key lo aur `/setapikey <key>` |
+| `❌ Supplier API key set nahi hai` | `.env` me `TGSHARK_API_KEY` khali | `.env` me key daalo ya bot me `/setapikey <key>` |
+| `Admin … DM peer abhi nahi bana (PEER_ID_INVALID)` | Admin ne bot ko `/start` nahi kiya | Admin ko bot par ek baar `/start` bhejna hai — uske baad menu apne aap set ho jata hai (log sirf ek baar aata hai) |
+| `10%%` profit message me double `%` | Harmless log formatting | Ignore karo |
+| Stock empty / price ₹0 | Sync fail ho raha hai | `/sync` chala kar log dekho |
+| `bash: start.sh: No such file` | Purani zip | `bash run.sh` (ya naya zip lo — ab `start.sh` bhi hai) |
+
+> Ek hi supplier key ko **do jagah** (do servers / do bot instance) mat chalao —
+> supplier key block ho sakti hai aur `Invalid apiKey` aane lagta hai.
+
 ## 🖥️ 24×7 chalana
+
+**alwaysdata** (background process allowed nahi) — unka *Service* use karo:
+`admin > Services > Add a service` →
+`Type: User program`, `Command: /home/idsellingbotspam/idsellingnova/run.sh`,
+`Working directory: /home/idsellingbotspam/idsellingnova`, `Restart: always`.
+Simple server par `screen -S idstore ./run.sh` bhi chalega.
 
 ```bash
 # screen (simple)

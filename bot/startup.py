@@ -53,15 +53,43 @@ async def post_start_init():
     if not db.get("api_creds"):
         db["api_creds"] = json.loads(json.dumps(MULTI_API_CREDENTIALS))
         changed = True
-    # v5.0: pehli run par Server 1 khud bana do (LIVE supplier server)
+    # v6.3: do servers — Server 1 = NEW account, Server 2 = OLD account (alag API key)
     if not server_codes():
-        db["server_seq"] = 1
-        db["server_order"] = ["s1"]
-        db["servers"]["s1"] = {"name": "Server 1", "desc": "Live numbers • instant OTP",
-                               "countries": {}, "source": "tgshark"}
+        db["server_seq"] = 2
+        db["server_order"] = ["s1", "s2"]
+        db["servers"]["s1"] = {"name": "Server 1 • New Accounts", "desc": "Fresh numbers • instant OTP",
+                               "countries": {}, "source": "tgshark", "sync": True}
+        db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "Aged / old numbers",
+                               "countries": {}, "source": "tgshark", "sync": True,
+                               "uplift_pct": AGED_UPLIFT_PCT}
         db["tgshark"]["server_code"] = "s1"
         changed = True
-        logging.info("First run — Server 1 created as the LIVE supplier server.")
+        logging.info("First run — Server 1 (New) + Server 2 (Old) created.")
+    else:                                   # purani install me Server 2 add kar do
+        if "s2" not in db["servers"]:
+            db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "Aged / old numbers",
+                                   "countries": {}, "source": "tgshark", "sync": True,
+                                   "uplift_pct": AGED_UPLIFT_PCT}
+            db.setdefault("server_order", []).append("s2")
+            db["server_seq"] = max(2, int(db.get("server_seq", 1) or 1))
+            changed = True
+            logging.info("Server 2 (Aged Accounts) added.")
+        # purane naam ko naye model me dhakel do
+        for code, newname, flag in (("s1", "Server 1 • New Accounts", True),
+                                    ("s2", "Server 2 • Aged Accounts", True)):
+            srv = db["servers"].get(code)
+            if srv and srv.get("name") in ("Server 1", "Server 1 • New", "Server 1 • New Accounts",
+                                           "Server 2", "Server 2 • Old", "Server 2 • Aged Accounts", None):
+                srv["name"] = newname
+                srv["sync"] = flag                       # aged server bhi ab live sync karega
+                if code == "s2" and not srv.get("uplift_pct"):
+                    srv["uplift_pct"] = AGED_UPLIFT_PCT  # aged = premium margin
+                changed = True
+    # har server ki apni supplier key (env se, ek baar)
+    for code, key in (("s1", TGSHARK_API_KEY), ("s2", TGSHARK_API_KEY_S2)):
+        if key and code in db["servers"] and not db["servers"][code].get("api_key"):
+            db["servers"][code]["api_key"] = key
+            changed = True
     if not db["tgshark"].get("tiers_v61"):
         db["tgshark"]["tiers"] = norm_tiers(TGSHARK_PROFIT_TIERS)
         db["tgshark"]["tiers_v61"] = True
@@ -108,8 +136,7 @@ async def post_start_init():
         print("ℹ️  Admin command menu ke liye admin ko ek baar bot ko /start karna zaroori hai.")
     # v4.0: startup par ek baar live stock sync (silent)
     try:
-        if api_server_code():
-            _n, msg = await tg_sync_stock()
-            logging.info("TGShark startup sync: %s", msg)
+        _n, msg = await tg_sync_all()
+        logging.info("Startup sync: %s", msg.replace("\n", " | "))
     except Exception as e:
-        logging.warning("TGShark startup sync failed: %s", e)
+        logging.warning("Startup sync failed: %s", e)

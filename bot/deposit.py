@@ -170,7 +170,51 @@ async def handle_dep_admin(query, data, uid):
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Approve", callback_data=f"dep_app_{ref}"),
              InlineKeyboardButton("❌ Reject", callback_data=f"dep_rej_{ref}")],
-            [InlineKeyboardButton("💬 Message User", callback_data=f"dep_msg_{ref}")]]))
+            [InlineKeyboardButton("💬 Message User", callback_data=f"dep_msg_{ref}"),
+             InlineKeyboardButton("🚫 Ban User", callback_data=f"dep_ban_{ref}")]]))
+        return
+
+    if data.startswith("dep_ban_"):        # payment screen se seedha user ban
+        ref = data[8:]
+        dep = db.get("pending_deposits", {}).get(ref)
+        if not dep:
+            return await ack(query, "❌ Already processed or expired.", show_alert=True)
+        await ack(query)
+        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚫 CONFIRM Ban", callback_data=f"dep_banc_{ref}"),
+             InlineKeyboardButton("🔙 Back", callback_data=f"dep_back_{ref}")]]))
+        return
+
+    if data.startswith("dep_banc_"):
+        ref = data[9:]
+        async with db_lock:
+            dep = db["pending_deposits"].pop(ref, None)
+            if not dep:
+                return await ack(query, "❌ Already processed.", show_alert=True)
+            db["processed_deposits"][ref] = "rejected"
+            db["deposit_log"].append({"ref": ref, "uid": dep["uid"], "amount": dep["amount"],
+                                      "status": "rejected+banned", "time": now_str(),
+                                      "by": admin_name})
+            db.setdefault("banned", [])
+            if dep["uid"] not in db["banned"]:
+                db["banned"].append(dep["uid"])
+            await save_db()
+        try:
+            await app.send_message(
+                dep["uid"],
+                "🚫 <b>You are banned</b>\n━━━━━━━━━━━━━━━━━━\n"
+                "Aapka account is store se banned kar diya gaya hai.\n\n"
+                "Agar ye galti se hua hai to support se contact karein.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("📞 Contact Support", url=support_url())]]))
+        except Exception:
+            pass
+        await log_event(f"🚫 <b>User banned</b> from deposit panel\n"
+                        f"👤 <code>{dep['uid']}</code> • Ref <code>{ref}</code> • by {esc(admin_name)}")
+        await query.message.edit_text(
+            f"🚫 <b>Banned</b> — <code>{dep['uid']}</code>\n"
+            f"Deposit <code>{ref}</code> reject kar diya gaya.\n"
+            f"Unban: <code>/unban {dep['uid']}</code>")
         return
 
     if data.startswith("dep_msg_"):

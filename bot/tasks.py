@@ -114,15 +114,15 @@ async def notify_restock(code, name, watchers):
     logging.info("Restock alert sent to %s user(s) for %s", sent, name)
 
 
-async def tg_sync_stock():
-    """API se countries + price + stock laakar API-server me daal do."""
-    code = api_server_code()
+async def tg_sync_stock(code=None):
+    """API se countries + price + stock laakar is server me daal do."""
+    code = code or api_server_code()
     srv = get_server(code)
     if not srv:
         return 0, "❌ API server not found (create server 1 first: /addserver)"
-    if not api_key_ok():
+    if not api_key_ok(code):
         return 0, api_key_missing_msg()
-    res = await tg_api("getCountrys")
+    res = await tg_api("getCountrys", key=srv_api_key(code))
     if res.get("status") != "ok":
         msg = str(res.get("message", "unknown"))
         hint = ""
@@ -154,6 +154,8 @@ async def tg_sync_stock():
         cobj["api_cost"] = cost
         cobj["api_max"] = float(c.get("max_price", cost) or cost)
         cobj["price"] = tg_sell_price(cost, price_key(code, iso))
+        if iso == "XX" and not cobj.get("desc"):     # Global Mix disclaimer
+            cobj["desc"] = GLOBAL_MIX_NOTE
         if old_cnt <= 0 and cnt > 0:                      # restock -> alert subscribers
             watchers = (db.get("notify") or {}).pop(price_key(code, iso), [])
             if watchers:
@@ -165,14 +167,32 @@ async def tg_sync_stock():
     await save_db()
     return (added + updated), f"✅ Synced: <b>+{added}</b> new, <b>{updated}</b> updated (total {len(countries)} countries)"
 
+async def tg_sync_all():
+    """Sabhi supplier servers (Server 1 = new, Server 2 = old) sync karo."""
+    codes = [c for c in server_codes() if srv_is_api(get_server(c))] or [api_server_code()]
+    total, lines = 0, []
+    for c in codes:
+        srv = get_server(c) or {}
+        if srv.get("sync") is False:      # manual / aged server — auto-sync nahi
+            lines.append(f"• <b>{esc(srv.get('name', c))}</b> ({c}): manual stock "
+                         f"({len(srv.get('countries', {}))} countries) — sync off")
+            continue
+        try:
+            cnt, msg = await tg_sync_stock(c)
+        except Exception as e:
+            cnt, msg = 0, f"❌ {esc(str(e))}"
+        total += cnt
+        lines.append(f"• <b>{esc((get_server(c) or {}).get('name', c))}</b> ({c}): {msg}")
+    return total, "\n".join(lines)
+
+
 async def tg_sync_loop():
-    await asyncio.sleep(120)          # startup ke 2 min baad pehla sync
+    await asyncio.sleep(60)           # startup ke 1 min baad pehla sync
     while True:
         try:
-            if api_server_code():
-                n, msg = await tg_sync_stock()
-                logging.info("Live-server auto-sync: %s", msg)
-                await check_low_stock()
+            n, msg = await tg_sync_all()
+            logging.info("Live-server auto-sync: %s", msg.replace("\n", " | "))
+            await check_low_stock()
         except Exception as e:
             logging.warning("Live-server sync failed: %s", e)
         await asyncio.sleep(max(5, TGSHARK_SYNC_MINS) * 60)

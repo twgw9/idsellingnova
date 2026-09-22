@@ -29,6 +29,8 @@ from .fsub import *
 async def start_handler(client, message):
     uid = message.from_user.id
     user_states.pop(uid, None)
+    if await banned_gate(message=message):
+        return
     uid_str = str(uid)
     existed = uid_str in db["users"]
     old_name = db["users"].get(uid_str, {}).get("name")
@@ -44,6 +46,10 @@ async def start_handler(client, message):
                 rrec["refs"].append(uid_str)
     if not existed or old_name != rec.get("name") or payload:
         await save_db()
+    if not existed:
+        await log_event(f"🆕 <b>New user</b>\n"
+                        f"👤 {esc(message.from_user.first_name or '-')} • <code>{uid}</code>\n"
+                        f"👥 Total users: <b>{len(db.get('users', {}))}</b>")
     if is_admin(uid):
         _admin_menu_ok.discard(uid)
         await _try_set_admin_commands(uid)
@@ -157,18 +163,17 @@ async def send_server_list(msg_or_query):
             msg_or_query,
             f"{E('cart')} <b>Products — {esc(bot_name())}</b>\n\n❌ No servers are live right now. "
             f"Please check back later!", home)
-    text = (f"{E('cart')} <b>Products — {esc(bot_name())}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n{E('diamond')} Choose a server:\n")
+    text = (f"{E('cart')} <b>Products</b> — server choose karo:\n"
+            f"━━━━━━━━━━━━━━━━━━\n")
     btns = []
     for i, code in enumerate(codes):
         srv = get_server(code)
-        desc = f" — {esc(srv['desc'])}" if srv.get("desc") else ""
         if srv_is_api(srv):
-            label = f"{E('api')} {esc(srv['name'])} {E('live')} LIVE{desc}"
+            label = f"{E('api')} {esc(srv['name'])} {E('live')}"
         else:
-            label = f"{server_emoji(i)} {esc(srv['name'])}{desc}"
+            label = f"{server_emoji(i)} {esc(srv['name'])}"
         stock = server_stock_count(srv)
-        btns.append([InlineKeyboardButton(f"{label} • {stock}", callback_data=f"srv_{code}")])
+        btns.append([InlineKeyboardButton(f"{label} • {stock} pcs", callback_data=f"srv_{code}")])
     btns.append([InlineKeyboardButton("🏠 Home", callback_data="home")])
     await _edit_or_reply(msg_or_query, text, InlineKeyboardMarkup(btns))
 
@@ -201,7 +206,7 @@ async def send_country_page(msg_or_query, code, page):
             f"📦 <b>{esc(srv['name'])}</b> ({code})\n\n❌ No stock available in this server right now.\n\n{hint}",
             InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Servers", callback_data="home_products"),
                                    InlineKeyboardButton("🏠 Home", callback_data="home")]]))
-    per_page = 10
+    per_page = max(5, int(COUNTRIES_PER_PAGE))
     total_pages = max(1, (len(names) + per_page - 1) // per_page)
     page = max(0, min(page, total_pages - 1))
     chunk = names[page * per_page:(page + 1) * per_page]
@@ -209,11 +214,10 @@ async def send_country_page(msg_or_query, code, page):
     head = (f"{E('bolt')} <b>LIVE STOCK</b> — instant delivery, auto OTP\n"
             if srv_is_api(srv) else "")
     text = (f"{head}"
-            f"{E('globe')} <b>{esc(srv['name'])}</b> — choose the country you want to buy from:\n"
-            f"{E('money')} Rates in ₹ (INR)\n"
-            f"👇 Tap a button for stock, quality &amp; price\n"
-            f"📄 Page {page + 1} of {total_pages}")
-    btns = [[InlineKeyboardButton("📋 Country • Quality • Rate", callback_data="noop")]]
+            f"{E('globe')} <b>{esc(srv['name'])}</b> — country choose karo\n"
+            f"{E('money')} Rates in ₹ (INR) • tap for stock &amp; price\n"
+            f"📄 Page {page + 1}/{total_pages} • {len(names)} countries")
+    btns = [[InlineKeyboardButton("📋 Rate Card (all countries)", callback_data=f"ratecard_{code}_{page}")]]
     row = []
     zero = [x for x in country_list(srv) if stock_count(srv["countries"][x]) <= 0]
     if zero:
@@ -223,8 +227,12 @@ async def send_country_page(msg_or_query, code, page):
         idx = names.index(n)
         price = country_price(srv["countries"][n])
         cnt = stock_count(srv["countries"][n])
-        row.append(InlineKeyboardButton(f"{cflag(srv, n)} {cname(srv, n)} • {stock_label(cnt)} (₹{price})",
-                                        callback_data=f"cid_{code}_{idx}_{page}"))
+        iso = (srv["countries"][n].get("iso") or n).upper()
+        dial = f"+{iso_dial(iso)} " if iso_dial(iso) else ""
+        label = (f"{cflag(srv, n)} {iso} {dial}• {cur()}{price} ({stock_label(cnt, short=True)})"
+                 if iso != "XX" else
+                 f"🎲 Global Mix • {cur()}{price} ({stock_label(cnt, short=True)})")
+        row.append(InlineKeyboardButton(label, callback_data=f"cid_{code}_{idx}_{page}"))
         if len(row) == 2:
             btns.append(row)
             row = []
@@ -265,6 +273,7 @@ async def send_country_info(msg_or_query, code, cidx, page):
             f"{E('box')} Available : <b>{stock_label(cnt)}</b>\n"
             f"{E('shield')} {esc(tags)}\n"
             + (f"📝 {esc(cobj.get('desc'))}\n" if cobj.get("desc") else "")
+            + (f"🎲 <i>{esc(GLOBAL_MIX_NOTE)}</i>\n" if cobj.get("iso") == "XX" else "")
             + "\n"
             f"{E('warn')} <b>Important:</b> {esc(db.get('buy_note', DEFAULT_BUY_NOTE))}\n"
             f"🚫 We are not responsible for any freeze/ban"

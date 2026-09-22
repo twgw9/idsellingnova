@@ -264,6 +264,73 @@ def unsold_ids(country_obj):
         }]
     return [i for i in country_obj.get("ids", []) if not i.get("sold", False)]
 
+def support_url():
+    """Support link hamesha clickable https URL me."""
+    raw = (db.get("support_link") or DEFAULT_SUPPORT or "").strip()
+    if raw.startswith("http"):
+        return raw
+    if raw.startswith("@"):
+        return "https://t.me/" + raw[1:]
+    if raw.startswith("t.me/"):
+        return "https://" + raw
+    return raw or "https://t.me/" + (DEFAULT_SUPPORT or "").lstrip("@")
+
+
+def home_channel_kb():
+    """Admin ke set kiye channels (sales updates, stock, offers…) ke buttons."""
+    rows = []
+    for ch in (db.get("home_channels") or []):
+        url = (ch.get("url") or "").strip()
+        title = (ch.get("title") or "").strip() or "Channel"
+        if url:
+            rows.append([InlineKeyboardButton(f"📢 {title}", url=url)])
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
+def server_uplift(code):
+    """Is server ka extra margin (aged/premium servers ke liye) → (pct, add₹)."""
+    srv = get_server(code) or {}
+    pct = float(srv.get("uplift_pct", 0) or 0)
+    add = float(srv.get("uplift_add", 0) or 0)
+    return pct, add
+
+
+def is_banned(uid):
+    return int(uid) in [int(x) for x in (db.get("banned") or [])] and not is_admin(uid)
+
+
+async def banned_gate(message=None, query=None):
+    """Banned user ko bot use karne hi mat do — Contact Support button ke saath."""
+    uid = (message.from_user.id if message is not None else
+           (query.from_user.id if query is not None else None))
+    if uid is None or not is_banned(uid):
+        return False
+    txt = (f"🚫 <b>You are banned</b>\n━━━━━━━━━━━━━━━━━━\n"
+           f"Aapka account is store se <b>banned</b> hai — aap bot use nahi kar sakte.\n\n"
+           f"Agar lagta hai ye galti se hua hai to support se baat karein.")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("📞 Contact Support", url=support_url())]])
+    try:
+        if query is not None:
+            await ack(query)
+            await query.message.edit_text(txt, reply_markup=kb)
+        else:
+            await message.reply_text(txt, reply_markup=kb)
+    except Exception:
+        pass
+    return True
+
+
+async def log_event(text):
+    """Owner ke private log group me event bhejo (set na ho to chupchap skip)."""
+    target = (LOG_GROUP or db.get("log_group") or "").strip()
+    if not target:
+        return False
+    try:
+        return bool(await safe_send(target, text))
+    except Exception:
+        return False
+
+
 def country_price(country_obj, key=None):
     """Price jo customer ko dikhega.
     Stored price hi use hoti hai (tier/override/margin sab usi me hai);

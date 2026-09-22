@@ -135,9 +135,16 @@ def calc_sell_price(cost_inr, key=None):
 
 
 def tg_sell_price(usd_cost, key=None):
-    """Live cost (USD) → bechne ka price (₹)."""
+    """Live cost (USD) → bechne ka price (₹) — server ka extra margin bhi lagakar."""
     c = tg_cfg()
-    return calc_sell_price(float(usd_cost or 0) * c["usd_inr"], key)
+    price = calc_sell_price(float(usd_cost or 0) * c["usd_inr"], key)
+    code = str(key or "").split(":")[0]
+    pct, add = server_uplift(code) if code else (0.0, 0.0)
+    if pct or add:
+        raw = round(price * (1 + pct / 100.0) + add, 6)
+        r = max(1, int(c["round_to"]))
+        price = int(math.ceil(raw / r - 1e-9) * r)
+    return price
 
 
 def price_key(code, name):

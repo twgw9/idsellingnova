@@ -133,12 +133,13 @@ ADMIN_COMMANDS = USER_COMMANDS + [
     BotCommand("dm", "/dm <user id> <message>"),
     BotCommand("broadcast", "Broadcast to all users"),
     BotCommand("addapi", "/addapi <api_id> <hash>"),
-    BotCommand("listapi", "List API credentials"),
+    BotCommand("serverkeys", "Per-server supplier keys"),
     BotCommand("backup", "Database backup"),
     BotCommand("restore", "Restore from backup"),
-    BotCommand("cancelstate", "Cancel running flow"),
     BotCommand("admins", "Admin list + menu status"),
-    BotCommand("setmenu", "Force-refresh command menu"),
+    BotCommand("syncall", "Sync Server 1 + Server 2"),
+    BotCommand("addchannel", "/addchannel Title | https://t.me/x"),
+    BotCommand("shutdown", "Stop the bot (owner only)"),
 ]
 
 _peer_warned = set()          # jin admins ke liye PEER_ID_INVALID log ho chuka hai

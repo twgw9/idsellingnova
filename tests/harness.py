@@ -23,6 +23,40 @@ patch_dry = True
 from bot import *               # noqa: E402,F401,F403  (submodules)
 from bot.startup import *       # noqa: E402,F401,F403  (sab functions/consts)
 
+# ------------------------------------------------- supplier API ka offline stub
+# Tests kabhi bhi asli supplier API ko call na karein (network/key dono bached).
+FAKE_COUNTRIES = [
+    {"country": "XX", "iso": "XX", "count": 900, "min_price": 0.20, "max_price": 2.10},
+    {"country": "BD", "iso": "BD", "count": 34, "min_price": 0.30, "max_price": 0.30},
+    {"country": "MM", "iso": "MM", "count": 57, "min_price": 0.35, "max_price": 0.35},
+    {"country": "MA", "iso": "MA", "count": 59, "min_price": 0.50, "max_price": 0.50},
+    {"country": "CO", "iso": "CO", "count": 20, "min_price": 0.35, "max_price": 0.35},
+    {"country": "MX", "iso": "MX", "count": 12, "min_price": 0.70, "max_price": 0.70},
+    {"country": "JP", "iso": "JP", "count": 8, "min_price": 1.10, "max_price": 1.10},
+    {"country": "AZ", "iso": "AZ", "count": 5, "min_price": 1.50, "max_price": 1.50},
+]
+
+
+async def fake_tg_api(action, key=None, **params):
+    import copy
+    if action == "getBalance":
+        return {"status": "ok", "success": True, "balance": 0.35,
+                "deposit_balance": 0.35, "sell_balance": 0.0, "currency": "USD"}
+    if action == "getInfo":
+        return {"status": "ok", "success": True, "telegram_id": 7839547993,
+                "username": "test_account", "rank": "VIP1", "balance": 0.35,
+                "purchases": 1, "sales": 0}
+    if action == "getCountrys":
+        return {"status": "ok", "success": True, "countries": copy.deepcopy(FAKE_COUNTRIES)}
+    if action == "getNumber":
+        return {"status": "ok", "success": True, "number": "+10000000000",
+                "hash_code": "FAKEHASH123", "price": 0.30, "twofa": None}
+    if action == "getCode":
+        return {"status": "ok", "success": True, "code": "12345", "waiting": False}
+    return {"status": "error", "success": False, "message": f"unknown action: {action}"}
+
+
+
 
 def bot_modules():
     return [m for name, m in list(sys.modules.items())
@@ -67,6 +101,9 @@ def _pin_test_config(path):
         tg = data.setdefault("tgshark", {})
         tg["usd_inr"] = 88.0          # suites isi rate par likhe gaye hain
         tg["dry_run"] = True          # kabhi asli number kharida hi na jaye
+        tg["api_key"] = "tgsharkapi-TEST-FAKE-KEY"
+        for _srv in (data.get("servers") or {}).values():
+            _srv["api_key"] = "tgsharkapi-TEST-FAKE-KEY"
         data["announce_channel"] = None   # test me koi real channel post na ho
         data["proof_channel"] = None
         with open(path, "w", encoding="utf-8") as fh:
@@ -116,3 +153,5 @@ def seed_demo_stock():
     return len(countries)
 
 
+# ---- import hote hi supplier API ko offline stub se replace kar do (network band)
+patch_global("tg_api", fake_tg_api)

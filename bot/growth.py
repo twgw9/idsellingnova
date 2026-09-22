@@ -185,6 +185,164 @@ async def cmd_banned(client, message):
         + "\n\nBan: <code>/ban &lt;id&gt;</code> • Unban: <code>/unban &lt;id&gt;</code>")
 
 
+@app.on_message(filters.private & filters.regex(r"(?i)^/setserverkey\s+(\w+)\s+(\S+)\s*$"))
+@admin_only
+async def cmd_setserverkey(client, message):
+    """Har server (new/old account) ki alag supplier key set karo."""
+    code = message.matches[0].group(1).lower()
+    key = message.matches[0].group(2).strip()
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(
+            f"❌ Server <code>{esc(code)}</code> nahi mila. Servers: "
+            f"{esc(', '.join(server_codes()))}")
+    srv["api_key"] = key
+    await save_db()
+    res = await tg_api("getBalance", key=key)
+    if res.get("status") == "ok":
+        return await message.reply_text(
+            f"{E('check')} <b>{esc(srv.get('name', code))}</b> key saved &amp; working! "
+            f"Balance: <b>${res.get('balance')}</b>")
+    await message.reply_text(
+        f"⚠️ Key saved for <b>{esc(srv.get('name', code))}</b> par API boli: "
+        f"<code>{esc(res.get('message', 'unknown'))}</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/serverkeys\b"))
+@admin_only
+async def cmd_serverkeys(client, message):
+    rows = []
+    for c in server_codes():
+        s = db["servers"][c]
+        k = (s.get("api_key") or "").strip()
+        rows.append(f"• <b>{esc(s.get('name', c))}</b> (<code>{c}</code>): "
+                    f"{'✅ set (' + k[:12] + '…)' if k else '❌ key nahi'}"
+                    f" • countries: {len(s.get('countries', {}))}")
+    await message.reply_text(
+        "🔑 <b>SERVER KEYS</b>\n━━━━━━━━━━━━━━━━━━\n" + "\n".join(rows) +
+        "\n\nSet karne ke liye: <code>/setserverkey s1 &lt;key&gt;</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/shutdown\s*$"))
+@admin_only
+async def cmd_shutdown(client, message):
+    """Owner: bot ko remote band kar do (keepalive dobara start nahi karega)."""
+    if message.from_user.id not in OWNER_IDS:
+        return await message.reply_text("❌ Sirf bot owner hi shutdown kar sakta hai.")
+    await message.reply_text(
+        "🛑 <b>Shutdown</b> — bot band ho raha hai…\n"
+        "<i>Dobara start karne ke liye server par <code>bash run.sh</code> chalayein.</i>")
+    await log_event(f"🛑 <b>Bot shutdown</b> requested by <code>{message.from_user.id}</code>")
+    try:                                   # keepalive script ko rokne ka nishan
+        open(os.path.join(os.getcwd(), "bot.stopped"), "w").write(now_str())
+    except Exception:
+        pass
+    if not request_shutdown():
+        await message.reply_text("⚠️ Stop event register nahi hua — server se process kill karein.")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/addchannel\s+(.+)", flags=re.S))
+@admin_only
+async def cmd_addchannel(client, message):
+    """Home screen par channel button lagao: /addchannel Sales Updates | https://t.me/xxx"""
+    raw = (message.matches[0].group(1) or "").strip()
+    if "|" in raw:
+        title, url = raw.split("|", 1)
+    elif " " in raw:
+        title, url = raw.split(None, 1)
+    else:
+        title, url = "Channel", raw
+    title, url = title.strip(), url.strip()
+    if not url.startswith("http"):
+        return await message.reply_text(
+            "❌ Format: <code>/addchannel Sales Updates | https://t.me/yourchannel</code>")
+    db.setdefault("home_channels", []).append({"title": title, "url": url})
+    await save_db()
+    await message.reply_text(
+        f"{E('check')} Channel added on Home screen: <b>{esc(title)}</b>\n"
+        f"Total: {len(db['home_channels'])} • Hatane ke liye <code>/channels</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/delchannel\s+(\d+)\s*$"))
+@admin_only
+async def cmd_delchannel(client, message):
+    idx = int(message.matches[0].group(1)) - 1
+    lst = db.get("home_channels") or []
+    if not (0 <= idx < len(lst)):
+        return await message.reply_text("❌ Galat number. List dekhne ke liye <code>/channels</code>")
+    gone = lst.pop(idx)
+    await save_db()
+    await message.reply_text(f"{E('check')} Removed: <b>{esc(gone.get('title', '?'))}</b>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/channels\b"))
+@admin_only
+async def cmd_channels(client, message):
+    lst = db.get("home_channels") or []
+    body = ("\n".join(f"  {i}. <b>{esc(c.get('title'))}</b> — {esc(c.get('url'))}"
+                      for i, c in enumerate(lst, 1)) or "   — koi channel set nahi —")
+    await message.reply_text(
+        f"📢 <b>HOME CHANNELS ({len(lst)})</b>\n━━━━━━━━━━━━━━━━━━\n{body}\n\n"
+        f"Add: <code>/addchannel Sales Updates | https://t.me/xxx</code>\n"
+        f"Remove: <code>/delchannel 1</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/syncall\b"))
+@admin_only
+async def cmd_syncall(client, message):
+    """Dono servers (Server 1 = new, Server 2 = old) ek saath sync."""
+    msg = await message.reply_text(f"{E('sync')} Syncing all servers…")
+    try:
+        cnt, out = await tg_sync_all()
+        await msg.edit_text(f"{E('check')} <b>SYNC DONE</b> ({cnt} rows)\n━━━━━━━━━━━━━━━━━━\n{out}")
+    except Exception as e:
+        await msg.edit_text(f"❌ Sync failed: <code>{esc(str(e))}</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/setserversync\s+(\w+)\s+(on|off)\s*$"))
+@admin_only
+async def cmd_setserversync(client, message):
+    """Server ka auto stock-sync on/off (Aged server manual reh sakta hai)."""
+    code = message.matches[0].group(1).lower()
+    on = message.matches[0].group(2).lower() == "on"
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    srv["sync"] = on
+    await save_db()
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> auto-sync "
+        f"{'ON' if on else 'OFF'} — "
+        + ("ab stock API se refresh hoga." if on else
+           "ab admin manually IDs add karega: <code>/addcountry " + code + " Name</code> phir "
+           "<code>/addids " + code + "</code>"))
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/setservermargin\s+(\w+)\s+(\S+)\s*$"))
+@admin_only
+async def cmd_setservermargin(client, message):
+    """Server ka extra margin: /setservermargin s2 30%  |  s2 +30  |  s2 off"""
+    code = message.matches[0].group(1).lower()
+    arg = (message.matches[0].group(2) or "").strip().lower()
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    if arg in ("off", "0", "none"):
+        srv["uplift_pct"], srv["uplift_add"] = 0.0, 0.0
+    elif arg.endswith("%"):
+        srv["uplift_pct"], srv["uplift_add"] = float(arg[:-1] or 0), 0.0
+    elif arg.startswith("+"):
+        srv["uplift_pct"], srv["uplift_add"] = 0.0, float(arg[1:] or 0)
+    else:
+        srv["uplift_pct"], srv["uplift_add"] = float(arg or 0), 0.0
+    await recalc_all_prices()
+    pct, add = server_uplift(code)
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> extra margin: "
+        + (f"<b>+{pct:g}%</b>" if pct else (f"<b>+₹{add:g}</b>" if add else "<b>off</b>"))
+        + f"\nAb <code>/syncall</code> karke naye rates dekho.")
+
+
 @app.on_message(filters.private & filters.regex(r"(?i)^/restock\b"))
 @admin_only
 async def cmd_restock(client, message):

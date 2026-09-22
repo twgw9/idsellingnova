@@ -56,7 +56,8 @@ DEFAULT_DB = {
     "low_stock": TGSHARK_LOW_STOCK,
     "coupons": {},                # CODE -> {type,value,uses,used,min_dep}
     "notify": {},                 # "code:country" -> [uid, ...] (restock alerts)
-    "banned": [],                 # banned buyer ids
+    "banned": [],
+    "home_channels": [],           # [{"title": ..., "url": ...}] — Home screen par dikhte hain                 # banned buyer ids
     "max_buy_day": MAX_BUY_PER_DAY,
     "auto_refund": AUTO_REFUND_ON_TIMEOUT,
     "ref_bonus": REF_BONUS_PCT,
