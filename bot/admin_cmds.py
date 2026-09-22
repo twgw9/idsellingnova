@@ -495,6 +495,7 @@ async def cmd_tgstatus(client, message):
         f"━━━━━━━━━━━━━━━━━━\n"
         f"{E('money')} API balance: <b>${bal.get('balance', '?')}</b>\n"
         f"{E('user')} Account: {esc(info.get('username', '?'))} (rank {esc(info.get('rank', '?'))})\n"
+        f"{E('key')} Key: <code>{esc(mask_key(srv_api_key()))}</code>\n"
         + err_line
         + f"{E('server')} API server: <code>{esc(code or '—')}</code>"
         f" ({esc(srv['name']) if srv else '—'})\n"
@@ -552,24 +553,68 @@ async def cmd_tgserver(client, message):
         f"💡 Its countries, stock and prices now come from the supplier API "
         f"(auto-refresh every {TGSHARK_SYNC_MINS} minutes).")
 
-@app.on_message(filters.private & filters.regex(r"(?i)^/setapikey\s*(.*)$", flags=re.S))
+@app.on_message(filters.private & filters.regex(r"(?i)^/setapikey(?:\s|$)"))
 @admin_only
 async def cmd_setapikey(client, message):
-    arg = (message.matches[0].group(1) or "").strip()
-    if not arg:
-        user_states[message.from_user.id] = {"state": "TG_KEY"}
-        return await message.reply_text("🔑 Send your TGShark API key "
-                                        "(starts with <code>tgsharkapi-</code>):")
-    db["tgshark"]["api_key"] = arg
+    """/setapikey <key>  —  key me space/newline ho to khud saaf kar lega"""
+    raw = (message.text or "").split(None, 1)
+    if len(raw) > 1 and raw[1].strip():
+        await _save_api_key(message, clean_key(raw[1]))
+        return
+    user_states[message.from_user.id] = {"state": "TG_KEY"}
+    await message.reply_text(
+        f"{E('api')} <b>New API key</b>\n━━━━━━━━━━━━━━━━━━\n"
+        f"Key bhejo (jo <code>tgsharkapi-</code> se shuru hoti hai):\n\n"
+        f"💡 <i>Agar key ke beech me line-break/space aa gaya ho to bhi chalega — "
+        f"bot khud saaf kar dega.</i>\n"
+        f"❌ <code>/cancel</code> se cancel karo.")
+
+
+async def _save_api_key(message, key):
+    """Key save karo → turant verify karo → result batao."""
+    if not key.startswith("tgsharkapi-"):
+        return await message.reply_text(
+            f"❌ Ye key nahi lagti — key <code>tgsharkapi-</code> se shuru hoti hai.\n"
+            f"Jo aapne bheja: <code>{esc(mask_key(key))}</code>")
+    db["tgshark"]["api_key"] = key
     await save_db()
     res = await tg_api("getBalance")
     if res.get("status") == "ok":
         db["tgshark"]["last_balance"] = res.get("balance", 0)
         await save_db()
-        await message.reply_text(f"{E('check')} API key saved &amp; working! "
-                                 f"Balance: <b>${res.get('balance')}</b>")
+        await message.reply_text(
+            f"✅ <b>API connect ho gaya!</b>\n━━━━━━━━━━━━━━━━━━\n"
+            f"🔑 Key saved: <code>{esc(mask_key(key))}</code>\n"
+            f"💰 Balance: <b>${res.get('balance')}</b>\n\n"
+            f"Ab <code>/tgsync</code> chalao — stock aa jayega.")
+        await log_event(f"{E('api')} <b>API key updated</b> by "
+                        f"{esc(message.from_user.first_name or 'admin')} — connected ✅")
+        return
+    msg = str(res.get("message") or "")
+    low = msg.lower()
+    if "apikey" in low or "401" in low or "unauthor" in low:
+        hint = ("🔑 Supplier ne key reject kar di.\n"
+                "   • Dashboard se poora text ek hi line me copy karo\n"
+                "   • Key expired/blocked ho sakti hai → nayi key banao\n"
+                "   • Ek key sirf ek jagah (do bot mat chalao)")
+    elif "403" in low or "ban" in low:
+        hint = ("🚫 Key banned — do alag IPs se use hone par hota hai.\n"
+                "   Nayi key banao aur sirf isi bot me chalao.")
+    elif "certificate" in low or "ssl" in low:
+        hint = ("🔒 SSL error — .env me <code>TGSHARK_VERIFY_SSL=false</code> "
+                "daal kar restart karo.")
+    elif "timed out" in low or "timeout" in low:
+        hint = ("⏱ Timeout — .env me <code>TGSHARK_HTTP_TIMEOUT=40</code> "
+                "daal kar restart karo.")
     else:
-        await message.reply_text(f"⚠️ Key saved but API says: <code>{esc(res.get('message'))}</code>")
+        hint = (f"❓ Supplier ka jawab: <code>{esc(msg[:100])}</code>\n"
+                f"   Thodi der baad dobara try karo.")
+    await message.reply_text(
+        f"⚠️ <b>Key saved, par connect nahi hua</b>\n━━━━━━━━━━━━━━━━━━\n"
+        f"🔑 Saved: <code>{esc(mask_key(key))}</code>\n"
+        f"❌ API bola: <code>{esc(msg[:80])}</code>\n\n{hint}\n\n"
+        f"🔍 <code>/apiprobe</code> se aur detail milegi.")
+
 
 @app.on_message(filters.private & filters.regex(r"(?i)^/setprofit\s+(\d+(?:\.\d+)?)"))
 @admin_only

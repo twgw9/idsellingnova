@@ -44,7 +44,10 @@ def norm_tiers(tiers):
 def tg_cfg():
     c = db.get("tgshark") or {}
     return {
-        "api_key": c.get("api_key") or TGSHARK_API_KEY,
+        # DB me kachra/placeholder/truncated key ho to .env wali (asli) key chalao
+        "api_key": (clean_key(c.get("api_key"))
+                    if str(clean_key(c.get("api_key"))).startswith("tgsharkapi-")
+                    else TGSHARK_API_KEY) or TGSHARK_API_KEY,
         "profit_pct": float(c.get("profit_pct", TGSHARK_PROFIT_PCT) or 0),
         "usd_inr": float(c.get("usd_inr", TGSHARK_USD_INR) or 88),
         "round_to": max(1, int(c.get("round_to", TGSHARK_ROUND_TO) or 1)),

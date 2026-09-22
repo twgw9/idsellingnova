@@ -342,3 +342,16 @@ MIT — `LICENSE` file dekho.
   • **UI** — menu me `🛒 Products | 👤 Profile` / `💳 Deposit | 📦 My IDs` /
     **`📢 Channels`** | `📞 Support` (+ admin panel). Har screen ke footer me
     **`📢 Channels`** aur **`🏠 Back to Home`**.
+
+## v6.4.2 — "Invalid apikey" fix (key ke beech space/newline)
+  • **Asli wajah mili**: copy-paste se key ke beech me **newline/space/zero-width char**
+    ghus jata hai (Telegram wrap kar deta hai) → supplier **401 Invalid apikey** deta hai.
+    Test: `tgsharkapi-\n<rest>` → 401, `tgsharkapi-<rest>` → ok.
+  • **`clean_key()`** — key se saara whitespace, zero-width, quotes nikal deta hai. Ab
+    `/setapikey` bheji gayi key khud saaf ho jati hai, aur DB/.env se padhte waqt bhi.
+  • **`/setapikey` naya** — save karte hi verify karta hai; galat key ka exact reason +
+    fix batata hai (key reject / banned-403 / SSL / timeout). `/myapikey` se abhi chal
+    rahi key (masked + puri copy karne layak) dekho.
+  • **`tg_cfg()` fallback** — DB me kabhi kachra/placeholder key aa jaye to `.env` wali
+    asli key use hoti hai. `/tgstatus` me ab **masked key** bhi dikhta hai.
+  • Tests: harness ab khali live DB copy karke khud fail nahi hota (clean state).

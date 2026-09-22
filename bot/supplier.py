@@ -136,16 +136,46 @@ def _tg_http(params):
         return _tg_http_urllib(params)
 
 
+ZERO_WIDTH = "\u200b\u200c\u200d\ufeff\u00a0"
+
+
+def clean_key(text):
+    """Key se saara whitespace / zero-width / quotes hatao.
+
+    Copy-paste se aksar key ke beech me newline ya space ghus jata hai
+    (Telegram wrap kar deta hai) → API 401 "Invalid apikey" deta hai.
+    Yahan har tarah ka chhupa hua character nikal dete hain.
+    """
+    if not text:
+        return ""
+    s = str(text).strip()
+    for ch in ZERO_WIDTH:
+        s = s.replace(ch, "")
+    s = "".join(ch for ch in s if not ch.isspace())   # space/tab/newline sab
+    s = s.strip("`'\"‘’“”.,;")
+    return s
+
+
+def mask_key(key):
+    """Key ka sirf pehla aur aakhir hissa — screenshot me dikhane ke liye."""
+    k = clean_key(key)
+    if not k:
+        return "(khali)"
+    if len(k) <= 20:
+        return k
+    return f"{k[:14]}…{k[-6:]}  (len {len(k)})"
+
+
 def srv_api_key(code=None):
     """Is server ki supplier key (server-specific, warna global fallback)."""
     code = code or tg_cfg()["server_code"]
     srv = get_server(code) or {}
-    k = (srv.get("api_key") or "").strip()
+    k = clean_key(srv.get("api_key"))
     if k:
         return k
     # default: sabhi servers ek hi (global) key use karein — alag key chahiye to
     # /setserverkey <code> <key> se per-server override laga do
-    return tg_cfg()["api_key"]
+    return clean_key(tg_cfg()["api_key"])
 
 
 def api_key_ok(code=None):
@@ -168,7 +198,7 @@ async def tg_api(action, key=None, **params):
     `key` do to wahi use hoti hai (per-server supplier account), warna current
     server ki key — isse Server 1 (new) aur Server 2 (old) alag account se chalte hain.
     """
-    p = {"apiKey": key or srv_api_key(), "action": action}
+    p = {"apiKey": clean_key(key or srv_api_key()), "action": action}
     p.update({k: v for k, v in params.items() if v is not None})
     last = {"status": "error", "success": False, "message": "unknown"}
     for attempt in range(max(1, int(TG_HTTP_RETRIES))):

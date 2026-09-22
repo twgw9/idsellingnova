@@ -656,6 +656,29 @@ async def main():
     patch_global("tg_api", fake_tg_api)
 
     print("\n" + "=" * 72)
+    print("TEST Q — key ke beech space/newline saaf (401 Invalid apikey fix)")
+    K = "tgsharkapi-gjgnZeXZyCpFqwDIljtsCCy3UxE1ggiR5tnhgrfivOzwIdXoVJcinQ"
+    check("clean_key: newline hat gaya", bot.clean_key(K[:11] + "\n" + K[11:]) == K)
+    check("clean_key: space hat gaya", bot.clean_key(K[:11] + " " + K[11:]) == K)
+    check("clean_key: zero-width hat gaya", bot.clean_key(K[:11] + "\u200b" + K[11:]) == K)
+    check("clean_key: quotes hat gaye", bot.clean_key("`" + K + "`") == K)
+    check("mask_key chhupata hai", bot.mask_key(K).endswith("VJcinQ  (len 65)")
+          and "gjgnZeXZyCpF" not in bot.mask_key(K))
+    db["tgshark"]["api_key"] = K[:11] + "\n" + K[11:]
+    check("srv_api_key hamesha saaf key deta hai", bot.srv_api_key() == K)
+    db["tgshark"]["api_key"] = K
+    m23 = make_msg("/setapikey hello-bro", r"(?i)^/setapikey(?:\s|$)")
+    await bot.cmd_setapikey(None, m23)
+    check("galat key reject", "Ye key nahi lagti" in " ".join(m23.sent))
+    m24 = make_msg("/setapikey " + K, r"(?i)^/setapikey(?:\s|$)")
+    await bot.cmd_setapikey(None, m24)
+    check("sahi key save + verify", "connect ho gaya" in " ".join(m24.sent)
+          and db["tgshark"]["api_key"] == K)
+    m25 = make_msg("/myapikey", r"(?i)^/myapikey\s*$")
+    await bot.cmd_myapikey(None, m25)
+    check("/myapikey key dikhata hai", "Puri key" in " ".join(m25.sent))
+
+    print("\n" + "=" * 72)
     print("TEST G — command menu 100 ke andar")
     check("menu <= 100", len(bot.ADMIN_COMMANDS) <= 100, f"{len(bot.ADMIN_COMMANDS)} commands")
 

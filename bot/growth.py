@@ -981,3 +981,22 @@ async def cmd_report(client, message):
 async def _lossreport_alias(client, message):
     message.matches = [re.match(r"(?i)^/lossreport\s*$", "/lossreport")]
     await cmd_lossreport(client, message)
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/myapikey\s*$"))
+@admin_only
+async def cmd_myapikey(client, message):
+    """/myapikey — abhi kaunsi key chal rahi hai (masked) + copy-paste ke liye puri"""
+    k = clean_key(srv_api_key())
+    if not k:
+        return await message.reply_text("❌ Koi key set nahi hai.")
+    res = await tg_api("getBalance")
+    ok = res.get("status") == "ok"
+    await message.reply_text(
+        f"🔑 <b>API Key</b>\n━━━━━━━━━━━━━━━━━━\n"
+        f"Key: <code>{esc(mask_key(k))}</code>\n"
+        f"Length: <b>{len(k)}</b>\n"
+        f"Status: <b>{'✅ connected' if ok else '❌ ' + esc(str(res.get('message'))[:40])}</b>"
+        + (f"\nBalance: <b>${res.get('balance')}</b>" if ok else "") + "\n\n"
+        f"👇 Puri key copy karne ke liye (ek hi line):\n"
+        f"<code>{esc(k)}</code>")

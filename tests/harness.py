@@ -81,8 +81,17 @@ def use_temp_db(path):
         os.remove(path)
     patch_global("DB_FILE", path)
     live = os.path.join(ROOT, "id_store_db.json")
+    # sirf tab copy karo jab live DB me asli servers ho — warna khali DB copy ho kar
+    # tests fail ho jate hain (harness hamesha clean state se chalna chahiye)
     if os.path.exists(live):
-        shutil.copyfile(live, path)
+        try:
+            with open(live, "r", encoding="utf-8") as f:
+                _live = json.loads(f.read() or "{}")
+            if ((_live.get("servers") or {}) and (_live.get("products") or {})) or \
+               len(_live.get("sales") or []) > 20:
+                shutil.copyfile(live, path)
+        except Exception:
+            pass
     else:
         # fresh clone: bot ke defaults se DB banao + demo stock seed karo
         asyncio.run(load_db())

@@ -486,7 +486,7 @@ async def _state_chain(client, message, uid, st, state, text):
 
     # ---------- ADMIN: API KEY / PREMIUM EMOJI ----------
     elif state == "TG_KEY":
-        db["tgshark"]["api_key"] = text.strip()
+        db["tgshark"]["api_key"] = clean_key(text)
         await save_db()
         user_states.pop(uid, None)
         res = await tg_api("getBalance")
