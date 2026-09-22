@@ -343,6 +343,45 @@ async def cmd_setservermargin(client, message):
         + f"\nAb <code>/syncall</code> karke naye rates dekho.")
 
 
+@app.on_message(filters.private & filters.regex(r"(?i)^/setloggroup\s*(\S+)?\s*$"))
+@admin_only
+async def cmd_setloggroup(client, message):
+    """Owner group/channel jahan sab updates jayein: /setloggroup @iddatabase10"""
+    arg = (message.matches[0].group(1) or "").strip()
+    if not arg:
+        cur = (LOG_GROUP or db.get("log_group") or "— set nahi —")
+        return await message.reply_text(
+            f"📋 <b>Log group:</b> <code>{esc(str(cur))}</code>\n\n"
+            f"Set: <code>/setloggroup @iddatabase10</code> ya <code>/setloggroup -100123456789</code>\n"
+            f"Bot ko us group me <b>admin</b> hona chahiye.")
+    db["log_group"] = arg
+    await save_db()
+    ok = await log_event("✅ <b>Log group set</b> — ab se naye user, sales, deposits aur "
+                         "OTP delivery ki copy yahan aayegi.")
+    await message.reply_text(
+        (f"{E('check')} Log group set: <code>{esc(arg)}</code> — test message bhej diya ✅"
+         if ok else
+         f"⚠️ Save ho gaya par message nahi gaya — bot ko us group me admin banao "
+         f"(<code>{esc(arg)}</code>) aur dobara <code>/setloggroup {esc(arg)}</code> chalao."))
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/settgserver\s+(\w+)\s+(\d+)\s*$"))
+@admin_only
+async def cmd_settgserver(client, message):
+    """Kaunsa bot-server kis supplier inventory se jude: /settgserver s2 2 (aged)"""
+    code = message.matches[0].group(1).lower()
+    num = int(message.matches[0].group(2))
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text(f"❌ Server <code>{esc(code)}</code> nahi mila.")
+    srv["tg_server"] = num
+    srv.pop("tg_server_ok", None)
+    await save_db()
+    await message.reply_text(
+        f"{E('check')} <b>{esc(srv.get('name', code))}</b> ab supplier inventory "
+        f"<code>server={num}</code> se chalega.\nAb <code>/syncall</code> chala kar stock dekho.")
+
+
 @app.on_message(filters.private & filters.regex(r"(?i)^/restock\b"))
 @admin_only
 async def cmd_restock(client, message):

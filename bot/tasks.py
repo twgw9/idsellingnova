@@ -122,7 +122,14 @@ async def tg_sync_stock(code=None):
         return 0, "❌ API server not found (create server 1 first: /addserver)"
     if not api_key_ok(code):
         return 0, api_key_missing_msg()
-    res = await tg_api("getCountrys", key=srv_api_key(code))
+    tg_server = int(srv.get("tg_server") or 0) or None      # 1 = new, 2 = aged
+    res = await tg_api("getCountrys", key=srv_api_key(code), server=tg_server)
+    # aged (server=2) catalog khali/error ho to default inventory se chalao
+    if (res.get("status") != "ok" or not (res.get("countries") or [])) and tg_server:
+        res = await tg_api("getCountrys", key=srv_api_key(code))
+        srv["tg_server_ok"] = False
+    else:
+        srv["tg_server_ok"] = bool(tg_server)
     if res.get("status") != "ok":
         msg = str(res.get("message", "unknown"))
         hint = ""

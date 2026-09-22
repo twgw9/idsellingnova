@@ -58,10 +58,10 @@ async def post_start_init():
         db["server_seq"] = 2
         db["server_order"] = ["s1", "s2"]
         db["servers"]["s1"] = {"name": "Server 1 • New Accounts", "desc": "Fresh numbers • instant OTP",
-                               "countries": {}, "source": "tgshark", "sync": True}
+                               "countries": {}, "source": "tgshark", "sync": True, "tg_server": 1}
         db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "Aged / old numbers",
                                "countries": {}, "source": "tgshark", "sync": True,
-                               "uplift_pct": AGED_UPLIFT_PCT}
+                               "tg_server": 2, "uplift_pct": AGED_UPLIFT_PCT}
         db["tgshark"]["server_code"] = "s1"
         changed = True
         logging.info("First run — Server 1 (New) + Server 2 (Old) created.")
@@ -69,7 +69,7 @@ async def post_start_init():
         if "s2" not in db["servers"]:
             db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "Aged / old numbers",
                                    "countries": {}, "source": "tgshark", "sync": True,
-                                   "uplift_pct": AGED_UPLIFT_PCT}
+                                   "tg_server": 2, "uplift_pct": AGED_UPLIFT_PCT}
             db.setdefault("server_order", []).append("s2")
             db["server_seq"] = max(2, int(db.get("server_seq", 1) or 1))
             changed = True
@@ -82,6 +82,7 @@ async def post_start_init():
                                            "Server 2", "Server 2 • Old", "Server 2 • Aged Accounts", None):
                 srv["name"] = newname
                 srv["sync"] = flag                       # aged server bhi ab live sync karega
+                srv["tg_server"] = 1 if code == "s1" else 2
                 if code == "s2" and not srv.get("uplift_pct"):
                     srv["uplift_pct"] = AGED_UPLIFT_PCT  # aged = premium margin
                 changed = True
@@ -98,6 +99,12 @@ async def post_start_init():
     if not api_key_ok():
         logging.warning("⚠️  Supplier API key set nahi hai (.env me TGSHARK_API_KEY) — "
                         "stock sync tab tak nahi hoga.")
+    try:
+        import bot as _bot_pkg
+        _ver = getattr(_bot_pkg, "__version__", "?")
+    except Exception:
+        _ver = "?"
+    await log_event(f"🟢 <b>Bot online</b> — @{esc(me.username or 'bot')} • v{_ver}")
     code = tg_cfg()["server_code"]
     srv = get_server(code)
     if srv and not srv.get("source"):

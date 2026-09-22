@@ -16,8 +16,11 @@ tools/           ← static checker
 
 ## 🆕 v6.3 me kya naya hai
 
-- **Do servers, dono live** — `Server 1 • New Accounts` aur `Server 2 • Aged Accounts`,
-  dono ek hi API key se sync hote hain (23-23 countries)
+- **Do servers, dono live** — `Server 1 • New Accounts` (**supplier inventory server=1**) aur
+  `Server 2 • Aged Accounts` (**server=2** — asli aged catalog: `INDIA 2021`, `LK 2020` …).
+  Ek hi API key se dono chalte hain. `getCountrys&server=2` khali aaye to
+  **apne aap default inventory par fallback** ho jata hai (stock kabhi blank nahi hoga).
+  Mapping badlo: `/settgserver s2 2`
 - **Aged server me zyada profit** — Server 2 par auto **+25% premium margin**
   (`AGED_UPLIFT_PCT`), badlo: `/setservermargin s2 40%` / `s2 +30` / `s2 off`
   → jaise BD: New ₹35 (profit ₹5) • Aged ₹45 (profit ₹15)
@@ -31,7 +34,9 @@ tools/           ← static checker
   "You are banned" + 📞 Contact Support screen, `/ban`, `/unban`, `/banned`
 - **Home par channels** — admin `/addchannel Sales Updates | https://t.me/xxx` se
   jitne chahe channels laga sake (Home tap karte hi dikhte hain)
-- **Log group** — `.env` me `LOG_GROUP=@iddatabase10` → naye user, sales, deposits ki copy
+- **GC / Log group** — `/setloggroup @iddatabase10` (ya `-100…` id) → **sab kuch** wahan:
+  bot online, naye user, deposit request + approve, **SALE**, OTP delivered, OTP timeout refund,
+  ban, shutdown. `.env` me bhi `LOG_GROUP=` daal sakte ho. Fail ho to bot chupchap ignore karta hai.
 - **Global Mix disclaimer** — XX (random country) ke saath "koi guarantee nahi" note
 - **Number ke saath country** — delivery/OTP screen me 🇧🇩 Bangladesh • +91…
 - **alwaysdata keep-alive** — `keepalive.sh` ko Scheduled Task me daalo, bot gire to khud uthega

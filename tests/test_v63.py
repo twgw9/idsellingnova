@@ -173,6 +173,72 @@ async def main():
     check("shutdown trigger nahi hua", not bot.request_shutdown() or True)
 
     print("\n" + "=" * 72)
+    print("TEST H — AGED server asli API se (server=2 inventory)")
+    db["servers"]["s1"] = {"name": "Server 1 • New Accounts", "desc": "", "countries": {},
+                           "source": "tgshark", "sync": True, "tg_server": 1}
+    db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "", "countries": {},
+                           "source": "tgshark", "sync": True, "tg_server": 2,
+                           "uplift_pct": 25.0}
+    calls = []
+    AGED = [{"country": "IN 2021", "iso": "IN2021", "count": 7, "min_price": 1.0, "max_price": 1.0},
+            {"country": "LK 2020", "iso": "LK2020", "count": 3, "min_price": 1.3, "max_price": 1.3}]
+
+    async def spy3(action, key=None, **pr):
+        calls.append((action, pr.get("server")))
+        if action == "getCountrys" and pr.get("server") == 2:
+            return {"status": "ok", "success": True, "countries": AGED}
+        return await fake_tg_api(action, key=key, **pr)
+
+    patch_global("tg_api", spy3)
+    await bot.tg_sync_all()
+    check("s1 ne server=1 mangwaya", ("getCountrys", 1) in calls, str(calls[:4]))
+    check("s2 ne server=2 (aged) mangwaya", ("getCountrys", 2) in calls)
+    check("s2 me AGED countries aaye",
+          set(db["servers"]["s2"]["countries"]) == {"IN2021", "LK2020"},
+          str(list(db["servers"]["s2"]["countries"])))
+    check("s1 me normal countries", "BD" in db["servers"]["s1"]["countries"])
+    check("aged flag on", db["servers"]["s2"].get("tg_server_ok") is True)
+
+    db["tgshark"]["dry_run"] = False                     # asli buy path test
+    bought = await bot.api_buy_number("IN2021", server=2)
+    check("aged buy me server=2 gaya", ("getNumber", 2) in calls and bought.get("ok"),
+          str([c for c in calls if c[0] == "getNumber"]))
+    db["tgshark"]["dry_run"] = True
+
+    async def spy4(action, key=None, **pr):               # aged catalog fail ho to?
+        if action == "getCountrys" and pr.get("server") == 2:
+            return {"status": "error", "message": "no aged stock"}
+        return await fake_tg_api(action, key=key, **pr)
+
+    patch_global("tg_api", spy4)
+    await bot.tg_sync_all()
+    check("aged fail par fallback (stock phir bhi dikhe)",
+          len(db["servers"]["s2"]["countries"]) > 0,
+          f"{len(db['servers']['s2']['countries'])} countries")
+    check("fallback flag off", db["servers"]["s2"].get("tg_server_ok") is False)
+    patch_global("tg_api", fake_tg_api)
+
+    print("\n" + "=" * 72)
+    print("TEST I — GC / LOG GROUP system")
+    sent = []
+    orig_send = bot.safe_send
+
+    async def fake_send(chat_id, text, **kw):
+        sent.append((chat_id, text))
+        return True
+
+    patch_global("safe_send", fake_send)
+    db["log_group"] = "@iddatabase10"
+    ok = await bot.log_event("🔔 test event")
+    check("log group me message gaya", ok and sent and sent[0][0] == "@iddatabase10", str(sent[:1]))
+    m9 = make_msg("/setloggroup @mylog", r"(?i)^/setloggroup\s*(\S+)?\s*$")
+    await bot.cmd_setloggroup(None, m9)
+    check("/setloggroup set hua", db["log_group"] == "@mylog", str(db["log_group"]))
+    db["log_group"] = None
+    check("group na ho to chupchap skip", await bot.log_event("x") is False)
+    patch_global("safe_send", orig_send)
+
+    print("\n" + "=" * 72)
     print("TEST G — command menu 100 ke andar")
     check("menu <= 100", len(bot.ADMIN_COMMANDS) <= 100, f"{len(bot.ADMIN_COMMANDS)} commands")
 

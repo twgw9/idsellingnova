@@ -27,14 +27,19 @@ from .deposit import *
 
 # ================= PURCHASE EXECUTION =================
 
-async def api_buy_number(iso):
-    """Reserve a number from the supplier. In demo mode a sample number is returned."""
+async def api_buy_number(iso, server=None):
+    """Reserve a number from the supplier. In demo mode a sample number is returned.
+
+    server=1 → new accounts inventory, server=2 → AGED accounts inventory.
+    """
     if tg_cfg()["dry_run"]:
         return {"ok": True, "dry": True,
                 "phone": "+000000" + "".join(random.choices(string.digits, k=6)),
                 "hash": "DRY" + "".join(random.choices(string.ascii_uppercase + string.digits, k=10)),
                 "price": 0.0, "twofa": ""}
-    res = await tg_api("getNumber", country=iso)
+    res = await tg_api("getNumber", country=iso, server=server)
+    if server and (res.get("status") != "ok" or not res.get("phone")):
+        res = await tg_api("getNumber", country=iso)      # aged stock khatam → default
     if res.get("status") == "ok" and res.get("phone"):
         return {"ok": True, "dry": False, "phone": str(res.get("phone")),
                 "hash": str(res.get("hash_code") or ""), "price": res.get("price", 0),
@@ -113,6 +118,8 @@ async def api_otp_watcher(sale_id, uid, delay=0):
                 pass
         return
     sd["status"] = "otp_timeout"
+    await log_event(f"⏱ <b>OTP timeout</b> — <code>{sale_id}</code> (uid <code>{uid}</code>) — "
+                    f"auto-refund ₹{price}")
     await save_db()
     try:
         await app.send_message(
@@ -219,7 +226,8 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
 
     # ---------- LIVE API purchase ----------
     if api_item:
-        bought = await api_buy_number(cobj.get("iso", name))
+        srv_tg = int(srv.get("tg_server") or 0) if srv.get("tg_server_ok") else None
+        bought = await api_buy_number(cobj.get("iso", name), server=srv_tg)
         if not bought.get("ok"):
             # AUTO REFUND
             async with db_lock:
@@ -286,6 +294,12 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
         if db.get("footer"):
             text += f"\n{esc(db['footer'])}\n"
         await query.message.reply_text(money(text))
+        await log_event(
+            f"💰 <b>SALE</b>\n"
+            f"👤 <code>{uid}</code> • 🆔 <code>{sale_id}</code>\n"
+            f"{iso_flag(cobj.get('iso'))} {esc(srv['name'])} • {esc(sd.get('label', name))}\n"
+            f"💵 {cur()}{price} (cost ${sd.get('cost_usd', 0)})\n"
+            f"📦 stock left: {stock_count(cobj)}")
         await send_proof_post(srv["name"], sd.get("label", name), sd.get("number", ""), price, uid,
                               stock_left=stock_count(srv["countries"][name]))
         asyncio.create_task(api_otp_watcher(sale_id, uid, delay=(20 if dry else 0)))

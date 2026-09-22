@@ -48,8 +48,8 @@ async def fake_tg_api(action, key=None, **params):
                 "purchases": 1, "sales": 0}
     if action == "getCountrys":
         return {"status": "ok", "success": True, "countries": copy.deepcopy(FAKE_COUNTRIES)}
-    if action == "getNumber":
-        return {"status": "ok", "success": True, "number": "+10000000000",
+    if action == "getNumber":                      # asli API "phone" key bhejti hai
+        return {"status": "ok", "success": True, "phone": "+10000000000",
                 "hash_code": "FAKEHASH123", "price": 0.30, "twofa": None}
     if action == "getCode":
         return {"status": "ok", "success": True, "code": "12345", "waiting": False}

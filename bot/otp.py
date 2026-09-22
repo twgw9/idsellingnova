@@ -115,6 +115,9 @@ async def send_otp_acquired(uid, sale_id, code=None, full=None):
                     f"{E('lock')} 2FA: {twofa_show}\n"
                     f"{E('money')} Paid: ₹{sd.get('price_inr', 0)}\n"
                     f"{test_note}")
+        if code:
+            await log_event(f"🔑 <b>OTP delivered</b>\n🆔 <code>{sale_id}</code> • "
+                            f"👤 <code>{uid}</code> • code <code>{esc(code)}</code>")
         return await app.send_message(uid, text, reply_markup=otp_kb(sale_id, api=True))
     # ---- manual (session) order ----
     if not code:

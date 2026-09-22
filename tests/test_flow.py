@@ -152,7 +152,7 @@ async def main():
     print("\n" + "=" * 70)
     print("TEST 7 — AUTO REFUND path (API failure simulation)")
     orig = bot.api_buy_number
-    async def fail_buy(iso):
+    async def fail_buy(iso, server=None):
         return {"ok": False, "err": "No numbers available for country XX"}
     patch_global("api_buy_number", fail_buy)
     bal_before_user = bot.balance_of(uid)
