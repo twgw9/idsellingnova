@@ -1000,3 +1000,37 @@ async def cmd_myapikey(client, message):
         + (f"\nBalance: <b>${res.get('balance')}</b>" if ok else "") + "\n\n"
         f"👇 Puri key copy karne ke liye (ek hi line):\n"
         f"<code>{esc(k)}</code>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/envcheck\s*$"))
+@admin_only
+async def cmd_envcheck(client, message):
+    """/envcheck — API key kahan se aa rahi hai, .env padha ya nahi (debug)"""
+    env_key = (env("TGSHARK_API_KEY") or "").strip()
+    db_key = str(db.get("tgshark", {}).get("api_key") or "").strip()
+    live = db["tgshark"].get("api_key") or ""
+    used = str(srv_api_key() or "")
+    status = "❌ set nahi hai"
+    if used.startswith("tgsharkapi-"):
+        res = await tg_api("getBalance")
+        status = (f"✅ connected — <b>${res.get('balance')}</b>"
+                  if res.get("status") == "ok"
+                  else f"⚠️ mili par API bola: <code>{esc(str(res.get('message'))[:60])}</code>")
+    lines = [
+        f"{E('api')} <b>ENV CHECK</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📄 <b>.env file:</b> <code>{esc(str(DOTENV_PATH))}</code> "
+        f"({'✅ mili' if DOTENV_PATH and os.path.exists(DOTENV_PATH) else '❌ nahi mili'})",
+        f"🔑 <b>env key:</b> <code>{esc(mask_key(env_key))}</code>",
+        f"🗄 <b>DB key:</b> <code>{esc(mask_key(db_key))}</code>",
+        f"📡 <b>Abhi chal rahi:</b> <code>{esc(mask_key(used))}</code>",
+        f"📍 <b>Source:</b> {esc(api_key_source())}",
+        f"📶 <b>Status:</b> {status}",
+    ]
+    if APIKEY_FILE_PATH:
+        lines.append(f"🧾 <b>apikey.txt:</b> <code>{esc(APIKEY_FILE_PATH)}</code>")
+    if not used.startswith("tgsharkapi-"):
+        lines += ["", "🛠 <b>Fix (1 line, sabse pakka):</b>",
+                  "<code>printf 'tgsharkapi-XXXX' &gt; apikey.txt</code> fir restart",
+                  "ya bot me <code>/setapikey &lt;key&gt;</code>"]
+    await message.reply_text("\n".join(lines))

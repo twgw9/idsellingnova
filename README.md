@@ -355,3 +355,30 @@ MIT — `LICENSE` file dekho.
   • **`tg_cfg()` fallback** — DB me kabhi kachra/placeholder key aa jaye to `.env` wali
     asli key use hoti hai. `/tgstatus` me ab **masked key** bhi dikhta hai.
   • Tests: harness ab khali live DB copy karke khud fail nahi hota (clean state).
+
+## Bot ki DP (profile photo) — option 2 final
+Chuni hui DP: `assets/dp2.png` → **640×640 square**, dono format me ready:
+`DP_FINAL.png` (488 KB) / `DP_FINAL.jpg` (88 KB).
+
+Telegram **Bot API se bot apni DP khud nahi badal sakta** — isliye BotFather se lagao:
+1. Telegram me **@BotFather** kholo
+2. `/mybots` → apna bot chuno (**@TG_NOVA_API_bot**)
+3. **Edit Bot** → **Edit Botpic** → photo bhejo (`DP_FINAL.png`)
+4. Ho gaya — 1-2 minute me sabko naye photo se dikhega
+
+Bina photo bheje `/setuserpic` bhi kaam karta hai (uske baad BotFather photo mangega).
+
+## v6.4.3 — ".env padha hi nahi gaya" fix + My IDs button
+  • **Bulletproof `.env` loader** — BOM, `export KEY=`, `KEY = value`, CRLF, quotes,
+    inline comments, zero-width sab handle; khali env var ho to bhi `.env` jeet-ta hai;
+    `.env` project dir / cwd / parent / home — charo jagah dhoondhta hai.
+  • **`apikey.txt` fallback (sabse pakka)** — `.env` kisi bhi wajah se na padhe to bas
+    project folder me `apikey.txt` banao, usme sirf key (ek line ho ya tooti hui 2-3
+    line — dono chalte hain). Bot use turant utha lega.
+  • **`/envcheck`** — key kahan se aa rahi hai (.env / apikey.txt / DB), masked key,
+    length, live balance — ek nazar me sab. Startup par bhi clear log.
+  • **`.env` ki key startup par DB me sync** hoti hai, to dono jagah ek hi key rahegi.
+  • **📦 My IDs button fix** — iska handler tha hi nahi (click par kuch nahi hota tha);
+    ab purchased IDs khol deta hai. 👤 Profile bhi theek hai.
+  • **PEER_ID_INVALID shor band** — admins ne abhi /start nahi kiya to WARNING ki jagah
+    ek INFO line. **Command menu hard cap 100** (Telegram limit cross na ho).

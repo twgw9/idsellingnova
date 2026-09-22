@@ -122,9 +122,26 @@ async def post_start_init():
                             f"saare prices dobara calculate ho gaye.")
         except Exception as _e:
             logging.warning("Rate recalc failed: %s", _e)
+    # .env / apikey.txt me sahi key ho to DB me bhi sync kar do (donon ek hi rahein)
+    try:
+        _env_key = (env("TGSHARK_API_KEY") or "").strip()
+        if _env_key.startswith("tgsharkapi-"):
+            _db_key = str(db.get("tgshark", {}).get("api_key") or "").strip()
+            if _db_key != _env_key:
+                db.setdefault("tgshark", {})["api_key"] = _env_key
+                await save_db()
+                logging.info("🔑 API key .env se load hui (%s...) [%s]",
+                             _env_key[:14], api_key_source())
+    except Exception:
+        pass
     if not api_key_ok():
-        logging.warning("⚠️  Supplier API key set nahi hai (.env me TGSHARK_API_KEY) — "
-                        "stock sync tab tak nahi hoga.")
+        logging.warning(
+            "⚠️  Supplier API key set nahi hai — stock sync tab tak nahi hoga.\n"
+            "    .env path: %s (exists=%s)\n"
+            "    apikey.txt: %s\n"
+            "    Fix (sabse aasan):  printf 'tgsharkapi-XXXX' > apikey.txt\n"
+            "    ya:  echo 'TGSHARK_API_KEY=tgsharkapi-XXXX' >> .env   fir restart",
+            DOTENV_PATH, os.path.exists(DOTENV_PATH or ""), APIKEY_FILE_PATH or "(nahi mila)")
     try:
         import bot as _bot_pkg
         _ver = getattr(_bot_pkg, "__version__", "?")

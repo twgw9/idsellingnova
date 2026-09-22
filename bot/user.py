@@ -444,6 +444,13 @@ async def profile_handler(client, message):
 async def cmd_myids(client, message):
     await send_my_ids(message)
 
+
+@app.on_message(filters.regex("^📦 My IDs$") & filters.private)
+async def myids_button_handler(client, message):
+    """Menu ka 📦 My IDs button (pehle iska handler nahi tha)."""
+    user_states.pop(message.from_user.id, None)
+    await send_my_ids(message)
+
 async def send_profile(msg_or_query):
     uid = msg_or_query.from_user.id
     rec = user_record(uid, msg_or_query.from_user.first_name)

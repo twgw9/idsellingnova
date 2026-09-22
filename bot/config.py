@@ -10,35 +10,95 @@ import os
 import re
 
 # ---------------------------------------------------------------- .env loader
-def _load_dotenv(paths=None):
-    """Minimal .env loader — koi external dependency nahi."""
+def _clean_val(raw):
+    """Value se quotes, inline comment, CRLF, zero-width sab hatao."""
+    v = str(raw).replace("\r", "").replace("\n", "").strip()
+    for ch in ("\u200b", "\u200c", "\u200d", "\ufeff", "\u00a0"):
+        v = v.replace(ch, "")
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("\"", "'"):
+        v = v[1:-1].strip()
+    else:                                   # 15   # comment  →  15
+        for sep in (" #", "\t#", " ;"):
+            if sep in v:
+                v = v.split(sep, 1)[0].strip()
+    return v
+
+
+def _dotenv_paths():
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    paths = paths or [os.path.join(here, ".env"), os.path.join(os.getcwd(), ".env")]
-    for path in paths:
+    cwd = os.getcwd()
+    out = []
+    for p in (os.path.join(here, ".env"), os.path.join(cwd, ".env"),
+              os.path.join(os.path.dirname(cwd), ".env"),
+              os.path.join(os.path.expanduser("~"), ".env")):
+        if p not in out:
+            out.append(p)
+    return out
+
+
+def _load_dotenv(paths=None):
+    """Bulletproof .env loader — BOM / `export ` / `KEY = value` / CRLF / quotes
+    / inline comments / zero-width sab handle. Khali env value ko bhi overwrite
+    karta hai (hosting par kabhi kabhi TGSHARK_API_KEY='' export hota hai)."""
+    loaded_from = None
+    for path in (paths or _dotenv_paths()):
         if not os.path.exists(path):
             continue
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open(path, encoding="utf-8-sig", errors="replace") as fh:
                 for line in fh:
-                    line = line.strip()
+                    line = line.strip().lstrip("\ufeff").strip()
                     if not line or line.startswith("#") or "=" not in line:
                         continue
+                    if line.startswith("export "):
+                        line = line[7:].strip()
                     key, val = line.split("=", 1)
-                    key = key.strip()
-                    raw = val.strip()
-                    quoted = raw[:1] in ("\"", "'")
-                    val = raw.strip('"').strip("'")
-                    if not quoted:                 # 15   # comment  → 15
-                        for sep in (" #", "\t#"):
-                            if sep in val:
-                                val = val.split(sep, 1)[0].strip()
-                    os.environ.setdefault(key, val)
+                    key = key.strip().upper()
+                    val = _clean_val(val)
+                    if not key:
+                        continue
+                    cur = os.environ.get(key)
+                    # khali/placeholder value ho to .env wali value jeet jaye
+                    if cur is None or str(cur).strip() == "":
+                        os.environ[key] = val
+            loaded_from = path
         except Exception:
-            pass
+            continue
         break
+    return loaded_from
 
 
-_load_dotenv()
+def _load_apikey_file():
+    """Last-resort: `apikey.txt` me sirf key ho to bhi bot chalega.
+
+    Hosting par .env kabhi-kabhi read nahi hota — tab ye kaam aata hai:
+        printf 'tgsharkapi-XXXX' > apikey.txt
+    Key ek line me ho ya copy-paste se 2-3 line me toot gayi ho, dono chalte hain.
+    """
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for path in (os.path.join(here, "apikey.txt"), os.path.join(os.getcwd(), "apikey.txt")):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8-sig", errors="replace") as fh:
+                joined = "".join(ch for ch in fh.read()
+                                 if not ch.isspace()
+                                 and ch not in "\u200b\u200c\u200d\ufeff\u00a0")
+            m = re.search(r"tgsharkapi-[A-Za-z0-9_\-]+", joined)
+            if not m:
+                continue
+            k = m.group(0)
+            if not str(os.environ.get("TGSHARK_API_KEY") or "").strip():
+                os.environ["TGSHARK_API_KEY"] = k
+            return path
+        except Exception:
+            continue
+    return None
+
+
+DOTENV_PATH = _load_dotenv()
+APIKEY_FILE_PATH = _load_apikey_file()
 
 
 def env(key, default=None):
@@ -117,6 +177,29 @@ TGSHARK_BASE = env("TGSHARK_BASE", "https://tgsharkapi.store/api/v1")
 # ⚠️  Supplier key kabhi code me mat rakho — .env me daalo (GitHub par commit na ho).
 #     Khali chhodoge to bot clear error dega: "Supplier API key set nahi hai".
 TGSHARK_API_KEY = env("TGSHARK_API_KEY", "")
+
+
+def api_key_source():
+    """Key kahan se mili — /envcheck aur startup log ke liye."""
+    if TGSHARK_API_KEY:
+        if APIKEY_FILE_PATH and os.environ.get("TGSHARK_API_KEY") == TGSHARK_API_KEY \
+                and not (DOTENV_PATH and _env_has(DOTENV_PATH, "TGSHARK_API_KEY")):
+            return f"apikey.txt ({APIKEY_FILE_PATH})"
+        return f".env ({DOTENV_PATH})" if DOTENV_PATH else "environment variable"
+    if APIKEY_FILE_PATH:
+        return f"apikey.txt ({APIKEY_FILE_PATH})"
+    return "kahin nahi — set hi nahi hai"
+
+
+def _env_has(path, key):
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            for line in fh:
+                if line.strip().lstrip("\ufeff").startswith(key + "="):
+                    return True
+    except Exception:
+        pass
+    return False
 
 # Server 2 (OLD supplier account) ki apni key — har account ki key alag hoti hai
 TGSHARK_API_KEY_S2 = env("TGSHARK_API_KEY_S2", "")

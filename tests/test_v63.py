@@ -679,6 +679,54 @@ async def main():
     check("/myapikey key dikhata hai", "Puri key" in " ".join(m25.sent))
 
     print("\n" + "=" * 72)
+    print("TEST R — .env loader bulletproof + apikey.txt + My IDs button")
+    K = "tgsharkapi-gjgnZeXZyCpFqwDIljtsCCy3UxE1ggiR5tnhgrfivOzwIdXoVJcinQ"
+    import tempfile, bot.config as _cfg
+    d = tempfile.mkdtemp()
+    variants = {
+        "normal": f"TGSHARK_API_KEY={K}\n",
+        "export+space": f"export TGSHARK_API_KEY = {K}\n",
+        "quoted": f'TGSHARK_API_KEY="{K}"\n',
+        "bom+crlf": "\ufeff" + f"TGSHARK_API_KEY={K}\r\n",
+        "inline comment": f"TGSHARK_API_KEY={K}   # supplier\n",
+        "blank lines": f"\n\n  TGSHARK_API_KEY={K}  \n\n",
+    }
+    for name, body in variants.items():
+        fp = os.path.join(d, "env_" + name.replace(" ", "_").replace("+", "_"))
+        open(fp, "w", encoding="utf-8").write(body)
+        os.environ.pop("TGSHARK_API_KEY", None)
+        _cfg._load_dotenv(paths=[fp])
+        check(f".env parse: {name}", os.environ.get("TGSHARK_API_KEY") == K,
+              str(os.environ.get("TGSHARK_API_KEY"))[:30])
+    # khali env var ho to bhi .env jeete
+    os.environ["TGSHARK_API_KEY"] = ""
+    _cfg._load_dotenv(paths=[os.path.join(d, "env_normal")])
+    check("khali env var ko .env overwrite kare", os.environ["TGSHARK_API_KEY"] == K)
+    # apikey.txt fallback (key 2 line me tooti hui)
+    cwd0 = os.getcwd(); os.chdir(d)
+    for name, body in {"ek line": K + "\n", "2 lines": K[:20] + "\n" + K[20:] + "\n",
+                       "zero-width": K[:20] + "\u200b" + K[20:]}.items():
+        open("apikey.txt", "w", encoding="utf-8").write(body)
+        os.environ["TGSHARK_API_KEY"] = ""
+        _cfg._load_apikey_file()
+        check(f"apikey.txt: {name}", os.environ.get("TGSHARK_API_KEY") == K,
+              str(os.environ.get("TGSHARK_API_KEY"))[:30])
+    os.chdir(cwd0)
+    os.environ["TGSHARK_API_KEY"] = K
+
+    # 📦 My IDs button ka handler hona chahiye (pehle tha hi nahi)
+    src_user = open(os.path.join(os.path.dirname(__file__), "..", "bot", "user.py"),
+                    encoding="utf-8").read()
+    check("My IDs button handler", 'filters.regex("^\U0001f4e6 My IDs$")' in src_user)
+    m26 = make_msg("\U0001f4e6 My IDs", r"^\U0001f4e6 My IDs$")
+    await bot.myids_button_handler(None, m26)
+    check("My IDs button kuch bhejta hai", len(m26.sent) >= 1 and len(" ".join(m26.sent)) > 20,
+          " ".join(m26.sent)[:60])
+    m27 = make_msg("/envcheck", r"(?i)^/envcheck\s*$")
+    await bot.cmd_envcheck(None, m27)
+    check("/envcheck chala", "ENV CHECK" in " ".join(m27.sent))
+
+    print("\n" + "=" * 72)
     print("TEST G — command menu 100 ke andar")
     check("menu <= 100", len(bot.ADMIN_COMMANDS) <= 100, f"{len(bot.ADMIN_COMMANDS)} commands")
 

@@ -16,6 +16,9 @@ from pyrogram.types import (ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKey
                             BotCommand, BotCommandScopeChat, BotCommandScopeDefault)
 
 from .config import *
+
+# Telegram ka hard limit: 100 commands. Isse zyada setMyCommands fail ho jata hai.
+MAX_BOT_COMMANDS = 100
 from .db import *
 from .emoji import *
 from .pricing import *
@@ -149,7 +152,8 @@ _peer_warned = set()          # jin admins ke liye PEER_ID_INVALID log ho chuka 
 async def _try_set_admin_commands(uid):
     """Admin ka chat-scope command menu set karne ki SAFE try (PEER_ID_INVALID-safe)."""
     try:
-        await app.set_bot_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(uid))
+        await app.set_bot_commands(ADMIN_COMMANDS[:MAX_BOT_COMMANDS],
+                               scope=BotCommandScopeChat(uid))
         _admin_menu_ok.add(uid)
         _admin_menu_pending.discard(uid)
         return True
@@ -182,7 +186,11 @@ async def _admin_nudge(uid):
             f"🛠️ <b>Admin Panel</b> and 📖 <b>Admin Help</b> buttons unlock instantly.",
             reply_markup=main_kb(uid))
     except Exception as e:
-        logging.warning("admin nudge to %s failed: %s", uid, e)
+                if "PEER_ID_INVALID" in str(e):
+                    logging.info("admin %s ne abhi bot start nahi kiya "
+                                 "(nudge skip) — /start ke baad menu set hoga", uid)
+                else:
+                    logging.warning("admin nudge to %s failed: %s", uid, e)
     await asyncio.sleep(1.5)
     if await set_admin_menu(uid):
         logging.info("Admin %s: nudge ke baad command menu set ho gaya ✅", uid)
@@ -200,7 +208,8 @@ async def nudge_pending_admins():
 
 async def refresh_command_menus():
     try:
-        await app.set_bot_commands(USER_COMMANDS, scope=BotCommandScopeDefault())
+        await app.set_bot_commands(USER_COMMANDS[:MAX_BOT_COMMANDS],
+                               scope=BotCommandScopeDefault())
     except Exception as e:
         logging.error("set default commands: %s", e)
     for adm in dict.fromkeys(list(db.get("admins", [])) + OWNER_IDS):
@@ -208,6 +217,7 @@ async def refresh_command_menus():
 
 async def reset_command_menu(uid):
     try:
-        await app.set_bot_commands(USER_COMMANDS, scope=BotCommandScopeChat(uid))
+        await app.set_bot_commands(USER_COMMANDS[:MAX_BOT_COMMANDS],
+                               scope=BotCommandScopeChat(uid))
     except Exception:
         pass
