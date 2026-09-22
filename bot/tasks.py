@@ -114,6 +114,48 @@ async def notify_restock(code, name, watchers):
     logging.info("Restock alert sent to %s user(s) for %s", sent, name)
 
 
+def build_aged_cats(srv, code, countries):
+    """Aged pool ka stock → admin ke banaye hue category tiles.
+
+    Supplier ka API aged pool ko EK bucket me deta hai (jaise XX · 44 numbers).
+    Har tile usi asli pool se kharidta hai (getNumber&country=<pool>&server=2),
+    isliye stock sabka shared hota hai aur note me likha hai: kisi specific
+    country/year ki guarantee nahi.
+    """
+    for stale in [k for k in list(srv["countries"]) if str(k).startswith("CAT:")]:
+        srv["countries"].pop(stale, None)
+    if not srv.get("aged_cats_on", True):
+        return 0
+    cats = [c for c in (srv.get("aged_cats") or []) if c.get("on", True)]
+    if not cats:
+        return 0
+    pool_iso, pool_cnt, pool_cost = None, 0, 0.0
+    for c in countries:                      # sabse bada bucket = asli aged pool
+        n = int(c.get("count", 0) or 0)
+        if n > pool_cnt:
+            pool_cnt = n
+            pool_iso = str(c.get("iso") or c.get("country") or "").upper()
+            pool_cost = float(c.get("min_price", 0) or 0)
+    if not pool_iso or pool_cnt <= 0:
+        return 0
+    tiles = {}
+    for i, cat in enumerate(cats, 1):
+        key = f"CAT:{i}"
+        if cat.get("cost"):                 # category ka apna supplier cost (USD)
+            price = tg_sell_price(float(cat["cost"]), price_key(code, key))
+        else:                               # admin ne seedha ₹ price diya → wahi
+            price = int(cat.get("price") or 0) or tg_sell_price(pool_cost, price_key(code, key))
+        price = max(price, int(tg_sell_price(pool_cost, price_key(code, key))))
+        tiles[key] = {"api": True, "iso": pool_iso,
+                      "display": str(cat.get("label") or f"Aged {i}"),
+                      "tags": db.get("default_tags", DEFAULT_TAGS), "ids": [],
+                      "api_count": pool_cnt, "api_cost": float(cat.get("cost") or pool_cost),
+                      "api_max": float(cat.get("cost") or pool_cost),
+                      "price": price, "aged": True, "pool": "aged", "shared_pool": True}
+    srv["countries"] = {**tiles, **srv["countries"]}
+    return len(tiles)
+
+
 async def tg_sync_stock(code=None):
     """API se countries + price + stock laakar is server me daal do.
 
@@ -166,9 +208,9 @@ async def tg_sync_stock(code=None):
                 hint = (" — key galat/expired lag rahi hai: .env me TGSHARK_API_KEY check karo "
                         "ya bot me /setapikey &lt;nayi key&gt;")
             return 0, f"❌ API error: {esc(msg)}{hint}"
-        return 0, ("⚠️ Aged pool abhi khali hai (0 numbers) — jaise hi aged stock "
-                   "aayega, apne aap dikh jayega." if is_aged
-                   else "⚠️ Is inventory me abhi koi stock nahi.")
+        return 0, ("⚠️ The aged pool is currently empty (0 numbers). "
+                   "New aged stock will appear here automatically." if is_aged
+                   else "⚠️ This inventory has no stock right now.")
 
     added = updated = 0
     for c in countries:
@@ -193,20 +235,20 @@ async def tg_sync_stock(code=None):
         cobj["api_cost"] = cost
         cobj["api_max"] = float(c.get("max_price", cost) or cost)
         cobj["price"] = tg_sell_price(cost, price_key(code, iso))
+        cobj["desc"] = strip_notes(cobj.get("desc"))      # purana note kabhi repeat na ho
         if is_aged:
             cobj["display"] = ("Aged Mix (Old Accounts)" if iso == "XX"
                                else f"{iso_name(iso)} (Aged)")
-            if not cobj.get("desc"):
-                cobj["desc"] = AGED_MIX_NOTE
         else:
             cobj["display"] = iso_name(iso)
-            if iso == "XX" and not cobj.get("desc"):      # Global Mix disclaimer
-                cobj["desc"] = GLOBAL_MIX_NOTE
+        cobj["pool"] = "aged" if is_aged else ("global" if iso == "XX" else None)
         if old_cnt <= 0 and cnt > 0:                      # restock -> alert subscribers
             watchers = (db.get("notify") or {}).pop(price_key(code, iso), [])
             if watchers:
                 asyncio.create_task(notify_restock(code, iso, watchers))
 
+    if is_aged:                       # aged pool → admin ke category tiles banao
+        build_aged_cats(srv, code, countries)
     db["tgshark"]["last_sync"] = time.time()
     bal = await tg_api("getBalance")
     if bal.get("status") == "ok":

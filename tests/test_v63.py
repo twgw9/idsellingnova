@@ -112,7 +112,9 @@ async def main():
     print("TEST B — GLOBAL MIX (XX) disclaimer")
     xx = db["servers"]["s1"]["countries"].get("XX")
     check("XX country hai", xx is not None)
-    check("XX me disclaimer", "Random country" in (xx.get("desc") or ""), (xx.get("desc") or "")[:60])
+    check("XX par GLOBAL note flag", xx.get("pool") == "global", str(xx.get("pool")))
+    check("desc me note dohara nahi likha",
+          "Random country" not in (xx.get("desc") or ""), (xx.get("desc") or "")[:60])
 
     print("\n" + "=" * 72)
     print("TEST C — BAN SYSTEM")
@@ -278,6 +280,83 @@ async def main():
     db["log_group"] = None
     check("group na ho to chupchap skip", await bot.log_event("x") is False)
     patch_global("safe_send", orig_send)
+
+    print("\n" + "=" * 72)
+    print("TEST J — AGED CATEGORY TILES (ek hi pool, alag-alag options)")
+    db["servers"]["s2"] = {"name": "Server 2 • Aged Accounts", "desc": "", "countries": {},
+                           "source": "tgshark", "sync": True, "tg_server": 2,
+                           "uplift_pct": 15.0}
+    m10 = make_msg("/agedcat preset", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m10)
+    cats = [k for k in db["servers"]["s2"]["countries"] if str(k).startswith("CAT:")]
+    check("preset se tiles bane", len(cats) == len(bot.AGED_CAT_PRESETS), f"{len(cats)} tiles")
+    t1 = db["servers"]["s2"]["countries"].get("CAT:1")
+    check("tile asli aged pool se juda", t1 and t1.get("iso") == "XX" and t1.get("shared_pool"),
+          str(t1 and t1.get("iso")))
+    check("tile ka price > 0", bool(t1 and t1.get("price", 0) > 0), str(t1 and t1.get("price")))
+    check("tile pe stock hai", bool(t1 and t1.get("api_count", 0) > 0), str(t1 and t1.get("api_count")))
+    check("tiles list me sabse upar", list(db["servers"]["s2"]["countries"])[0].startswith("CAT:"))
+    check("note desc me nahi likha (dohara nahi hoga)",
+          not any("Random" in (c.get("desc") or "")
+                  for c in db["servers"]["s2"]["countries"].values()))
+    before = [c.get("api_count") for c in db["servers"]["s2"]["countries"].values()
+              if c.get("shared_pool")]
+    bot.bump_shared_stock(db["servers"]["s2"], t1, -1)
+    after = [c.get("api_count") for c in db["servers"]["s2"]["countries"].values()
+             if c.get("shared_pool")]
+    check("ek tile bikne par sabka stock ghata (shared pool)",
+          all(b - 1 == a for b, a in zip(before, after)), f"{before[:3]} → {after[:3]}")
+    m11 = make_msg("/agedcat clear", r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$")
+    await bot.cmd_agedcat(None, m11)
+    check("clear se tiles hat gaye",
+          not [k for k in db["servers"]["s2"]["countries"] if str(k).startswith("CAT:")])
+    check("pool wala asli entry bacha rahega", "XX" in db["servers"]["s2"]["countries"])
+    patch_global("tg_api", fake_tg_api)
+
+    print("\n" + "=" * 72)
+    print("TEST K — LOSS GUARD (kabhi nuksan na ho) + rate change")
+    _old_tiers = db["tgshark"].get("tiers")
+    db["tgshark"]["tiers"] = bot.norm_tiers([[999999, 0, 0]])      # 0% margin (test ke liye)
+    db.setdefault("tgshark", {})["min_profit"] = 0.0
+    p0 = bot.calc_sell_price(100.0)
+    check("floor off → sirf rule laga", p0 == bot.apply_rounding(100.0), str(p0))
+    db["tgshark"]["min_profit"] = 5.0
+    p1 = bot.calc_sell_price(100.0)
+    check("floor on → cost + ₹5 profit pakka", p1 >= 105, f"₹{p1} (cost ₹100)")
+    db["tgshark"]["tiers"] = _old_tiers
+    db["tgshark"]["min_profit"] = 0.0
+    db["tgshark"]["loss_guard"] = True
+    k_sent = []
+    _real_send = bot.safe_send
+    async def k_send(chat_id, text, **kw):
+        k_sent.append((chat_id, text)); return True
+    patch_global("safe_send", k_send)
+    db["tgshark"]["dry_run"] = False                 # asli buy-path jaisa
+    srv = db["servers"]["s2"]
+    srv["countries"]["XX"] = {"api": True, "iso": "XX", "display": "Aged Mix",
+                             "api_count": 10, "api_cost": 0.45, "price": 50, "ids": []}
+    await bot.loss_guard_check(srv, "s2", "XX", srv["countries"]["XX"], 50,
+                               {"price": 0.45}, "TEST1", 1)
+    check("nuksan nahi → stock freeze nahi hua", srv["countries"]["XX"]["api_count"] == 10)
+    await bot.loss_guard_check(srv, "s2", "XX", srv["countries"]["XX"], 50,
+                               {"price": 1.80}, "TEST2", 1)
+    check("nuksan hua → stock FREEZE (0)", srv["countries"]["XX"]["api_count"] == 0)
+    check("nuksan par admin/GC ko alert gaya", any("LOSS GUARD" in t for _c, t in k_sent),
+          str([t[:40] for _c, t in k_sent][-1:]))
+    db["tgshark"]["loss_guard"] = False
+    srv["countries"]["XX"]["api_count"] = 10
+    await bot.loss_guard_check(srv, "s2", "XX", srv["countries"]["XX"], 50,
+                               {"price": 1.80}, "TEST3", 1)
+    check("guard off → freeze nahi", srv["countries"]["XX"]["api_count"] == 10)
+    patch_global("safe_send", _real_send)
+    db["tgshark"]["dry_run"] = True
+    db["tgshark"]["usd_inr"] = 88.0
+    db["servers"]["s1"]["countries"]["BD"] = {"api": True, "iso": "BD", "display": "BD",
+                                             "api_count": 5, "api_cost": 0.30,
+                                             "price": 35, "ids": []}
+    await bot.recalc_all_prices(reason="test")
+    check("recalc chala", db["servers"]["s1"]["countries"]["BD"]["price"] > 0,
+          str(db["servers"]["s1"]["countries"]["BD"]["price"]))
 
     print("\n" + "=" * 72)
     print("TEST G — command menu 100 ke andar")

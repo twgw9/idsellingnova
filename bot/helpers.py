@@ -306,8 +306,8 @@ async def banned_gate(message=None, query=None):
     if uid is None or not is_banned(uid):
         return False
     txt = (f"🚫 <b>You are banned</b>\n━━━━━━━━━━━━━━━━━━\n"
-           f"Aapka account is store se <b>banned</b> hai — aap bot use nahi kar sakte.\n\n"
-           f"Agar lagta hai ye galti se hua hai to support se baat karein.")
+           f"Your account is <b>banned</b> from this store — you cannot use the bot.\n\n"
+           f"If you think this was a mistake, please contact support.")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("📞 Contact Support", url=support_url())]])
     try:
         if query is not None:
@@ -322,7 +322,8 @@ async def banned_gate(message=None, query=None):
 
 async def log_event(text):
     """Owner ke private log group me event bhejo (set na ho to chupchap skip)."""
-    target = (LOG_GROUP or db.get("log_group") or "").strip()
+    # db me key hai to wahi (khali = off); key hi nahi to .env wala default
+    target = ((db.get("log_group") or "") if "log_group" in db else (LOG_GROUP or "")).strip()
     if not target:
         return False
     try:
@@ -339,6 +340,70 @@ def country_price(country_obj, key=None):
         stored = int(country_obj.get("price", 0) or 0)
         return stored if stored > 0 else tg_sell_price(country_obj.get("api_cost", 0), key)
     return int(country_obj.get("price", 0) or 0)
+
+def min_profit_inr():
+    """Har sale me kam se kam itna ₹ profit chahiye (admin /setminprofit se badal sakta hai)."""
+    v = (db.get("tgshark") or {}).get("min_profit")
+    return float(TGSHARK_MIN_PROFIT if v is None else v or 0)
+
+
+def loss_guard_on():
+    """Loss-guard chalu hai? (admin /lossguard se badal sakta hai)."""
+    v = (db.get("tgshark") or {}).get("loss_guard")
+    return bool(TGSHARK_LOSS_GUARD if v is None else v)
+
+
+async def loss_guard_check(srv, code, ckey, cobj, price_inr, bought, sale_id, uid):
+    """Supplier ne jitna liya, wo hamari price se zyada? → stock FREEZE + admin alert.
+
+    Kabhi bhi nuksan na ho: aisi country ka stock turant 0 kar dete hain (baaki
+    buyers bach jayein), GC + admins ko alert, aur /syncall ke baad naye rates aayenge.
+    """
+    if not loss_guard_on() or tg_cfg()["dry_run"]:
+        return False
+    actual_inr = float(bought.get("price") or 0) * float(tg_cfg()["usd_inr"] or 0)
+    if actual_inr <= float(price_inr or 0):
+        return False
+    async with db_lock:
+        bump_shared_stock(srv, cobj, -int(cobj.get("api_count", 0) or 0))   # freeze
+        await save_db()
+    loss = actual_inr - float(price_inr or 0)
+    name = cobj.get("display") or ckey
+    txt = (f"{E('warn')} <b>LOSS GUARD — sale rok di</b>\n"
+           f"━━━━━━━━━━━━━━━━━━\n"
+           f"🆔 <code>{sale_id}</code> • 👤 <code>{uid}</code>\n"
+           f"🌍 {esc(str(name))} ({esc(code)})\n"
+           f"💵 Mila: ₹{price_inr} • 💸 Kharcha: ₹{actual_inr:.0f}\n"
+           f"📉 Nuksan: <b>₹{loss:.0f}</b>\n\n"
+           f"🔒 Is country ka stock freeze kar diya — <code>/syncall</code> "
+           f"karke naye rates lagayein.")
+    await log_event(txt)
+    for a in dict.fromkeys(list(db.get("admins", [])) + OWNER_IDS):
+        try:
+            await safe_send(a, txt)
+        except Exception:
+            pass
+    logging.error("LOSS GUARD: %s %s — got ₹%s, paid ₹%.0f", code, ckey, price_inr, actual_inr)
+    return True
+
+
+def strip_notes(text):
+    """Purane stored disclaimers hatao — note ab config se render hota hai (ek hi baar)."""
+    if not text:
+        return ""
+    keep = [l for l in str(text).splitlines() if l.strip()[:1] not in ("\U0001f3b2", "\U0001f570")]
+    return "\n".join(keep).strip()
+
+
+def bump_shared_stock(srv, cobj, delta):
+    """Shared aged-pool tiles ka stock EK SAATH badhao/ghatao (44 pool sabme common)."""
+    if cobj.get("shared_pool"):
+        for c in (srv.get("countries") or {}).values():
+            if c.get("shared_pool"):
+                c["api_count"] = max(0, int(c.get("api_count", 0) or 0) + delta)
+    else:
+        cobj["api_count"] = max(0, int(cobj.get("api_count", 0) or 0) + delta)
+
 
 def stock_count(country_obj):
     if country_obj.get("api"):

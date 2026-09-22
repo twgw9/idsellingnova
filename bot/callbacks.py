@@ -52,7 +52,7 @@ async def callback_router(client, query: CallbackQuery):
         if ch_kb:
             await query.message.reply_text(
                 f"📢 <b>Join our channels</b>\n━━━━━━━━━━━━━━━━━━\n"
-                f"Sales updates, new stock aur offers sabse pehle yahin milte hain 👇",
+                f"Sales updates, new stock and offers — everything lands here first 👇",
                 reply_markup=ch_kb)
         return
 
@@ -92,7 +92,8 @@ async def callback_router(client, query: CallbackQuery):
             rows.append(f"{cflag(srv, nm)} <b>{esc(nm_show)}</b> — {cur()}{country_price(cobj)} "
                         f"({stock_label(stock_count(cobj), short=True)})")
         if not rows:
-            return await ack(query, "❌ Is server me abhi koi country nahi.", show_alert=True)
+            return await ack(query, "❌ No countries available on this server right now.",
+                              show_alert=True)
         head = (f"💎 <b>RATE CARD — {esc(srv['name'])}</b>\n━━━━━━━━━━━━━━━━━━\n")
         for i in range(0, len(rows), 40):                 # 4096-char limit safe
             chunk = rows[i:i + 40]

@@ -131,6 +131,9 @@ def calc_sell_price(cost_inr, key=None):
         raw = cost_inr * (1 + val / 100.0)
         if min_add:                       # 10% chhota ho to bhi min ₹ profit pakka
             raw = max(raw, cost_inr + min_add)
+    _mp = min_profit_inr()                # LOSS-PROOF: kam se kam itna ₹ profit pakka
+    if _mp > 0:
+        raw = max(raw, float(cost_inr or 0) + _mp)
     return apply_rounding(raw)
 
 

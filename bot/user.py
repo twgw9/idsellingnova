@@ -163,7 +163,7 @@ async def send_server_list(msg_or_query):
             msg_or_query,
             f"{E('cart')} <b>Products — {esc(bot_name())}</b>\n\n❌ No servers are live right now. "
             f"Please check back later!", home)
-    text = (f"{E('cart')} <b>Products</b> — server choose karo:\n"
+    text = (f"{E('cart')} <b>Products</b> — choose a server:\n"
             f"━━━━━━━━━━━━━━━━━━\n")
     btns = []
     for i, code in enumerate(codes):
@@ -214,7 +214,7 @@ async def send_country_page(msg_or_query, code, page):
     head = (f"{E('bolt')} <b>LIVE STOCK</b> — instant delivery, auto OTP\n"
             if srv_is_api(srv) else "")
     text = (f"{head}"
-            f"{E('globe')} <b>{esc(srv['name'])}</b> — country choose karo\n"
+            f"{E('globe')} <b>{esc(srv['name'])}</b> — choose a country\n"
             f"{E('money')} Rates in ₹ (INR) • tap for stock &amp; price\n"
             f"📄 Page {page + 1}/{total_pages} • {len(names)} countries")
     btns = [[InlineKeyboardButton("📋 Rate Card (all countries)", callback_data=f"ratecard_{code}_{page}")]]
@@ -270,6 +270,13 @@ async def send_country_info(msg_or_query, code, cidx, page):
     tags = cobj.get("tags") or db.get("default_tags", DEFAULT_TAGS)
     if srv_is_api(srv):
         cfg = tg_cfg()
+        # note EK hi baar — pool flag se choose hota hai (DB me likha nahi jata)
+        if cobj.get("pool") == "aged" or (cobj.get("aged") and cobj.get("iso") == "XX"):
+            note = f"<i>{esc(AGED_MIX_NOTE)}</i>"
+        elif cobj.get("pool") == "global" or cobj.get("iso") == "XX":
+            note = f"<i>{esc(GLOBAL_MIX_NOTE)}</i>"
+        else:
+            note = ""
         text = (
             f"{E('bolt')} <b>Telegram Account — Instant Delivery</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -279,7 +286,9 @@ async def send_country_info(msg_or_query, code, cidx, page):
             f"{E('box')} Available : <b>{stock_label(cnt)}</b>\n"
             f"{E('shield')} {esc(tags)}\n"
             + (f"📝 {esc(cobj.get('desc'))}\n" if cobj.get("desc") else "")
-            + (f"🎲 <i>{esc(GLOBAL_MIX_NOTE)}</i>\n" if cobj.get("iso") == "XX" else "")
+            + (f"🔗 <i>Shared aged pool — every aged option draws from the same stock</i>\n"
+               if cobj.get("shared_pool") else "")
+            + (f"{note}\n" if note else "")
             + "\n"
             f"{E('warn')} <b>Important:</b> {esc(db.get('buy_note', DEFAULT_BUY_NOTE))}\n"
             f"🚫 We are not responsible for any freeze/ban"

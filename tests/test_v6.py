@@ -98,6 +98,7 @@ async def main():
         return True
 
     patch_global("safe_send", fake_safe_send)
+    bot.db.setdefault("tgshark", {})["min_profit"] = 0.0  # floor alag test me check
 
     async def fake_send_photo(*a, **kw):
         class M:
@@ -122,12 +123,14 @@ async def main():
     check("profitcalc works", "Selling price" in out and "PRICE CALCULATOR" in out)
     print("    " + out.replace("\n", " | ")[:230])
 
-    # sirf % mode
+    # sirf % mode (min-profit floor band karke — warna floor price upar khinch deta hai)
+    bot.db.setdefault("tgshark", {})["min_profit"] = 0.0
     msg = await run(bot.cmd_setprofitmode, "/setprofitmode pct", r"(?i)^/setprofitmode\s+(tiers|pct)")
     check("mode = pct saved", bot.tg_cfg()["mode"] == "pct")
     srv1 = bot.get_server("s1")
     p_pct = bot.country_price(srv1["countries"]["BD"])
-    check("pct mode price = cost*1.10 rounded", p_pct == bot.apply_rounding(0.30 * 88 * 1.10), f"₹{p_pct}")
+    _rate = float(bot.tg_cfg()["usd_inr"] or 88)
+    check("pct mode price = cost*1.10 rounded", p_pct == bot.apply_rounding(0.30 * _rate * 1.10), f"₹{p_pct}")
     msg = await run(bot.cmd_setprofitmode, "/setprofitmode tiers", r"(?i)^/setprofitmode\s+(tiers|pct)")
     check("mode = tiers restored", bot.tg_cfg()["mode"] == "tiers")
 

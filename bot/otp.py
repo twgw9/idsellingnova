@@ -163,7 +163,7 @@ async def mark_id_dead(sale_id, reason):
         f"💸 Sold: {sold_at}\n"
         f"❄️ Reason: <code>{esc(reason)}</code>\n"
         f"🕒 Detected: {now_str()}\n\n"
-        f"🔒 Is ID ka OTP delivery user ke liye DISABLED kar diya gaya.\n"
+        f"🔒 OTP delivery has been DISABLED for the buyer on this ID.\n"
         f"🛠 /otp {sale_id} • /freezeid • /unfreezeid • /sales"
     )
     for a in dict.fromkeys(list(db.get("admins", [])) + OWNER_IDS):

@@ -96,6 +96,32 @@ async def post_start_init():
         db["tgshark"]["tiers_v61"] = True
         changed = True
         logging.info("Profit rule updated: ₹0-30 → +₹5 • ₹30-100 → 10%% (min ₹5) • ₹100+ → +₹15")
+    # ek baar: purane stored disclaimers saaf karo (ab note config se render hota hai)
+    for _s in db.get("servers", {}).values():
+        for _c in (_s.get("countries") or {}).values():
+            if _c.get("desc"):
+                _c["desc"] = strip_notes(_c["desc"])
+        if not isinstance(_s.get("aged_cats"), list):
+            _s["aged_cats"] = _s.get("aged_cats") or []
+        if (int(_s.get("tg_server") or 0) >= 2 and not _s["aged_cats"]
+                and not _s.get("aged_cats_seeded")):
+            _s["aged_cats"] = [{"label": lb, "cost": usd, "price": 0, "on": True}
+                               for lb, usd in AGED_CAT_PRESETS]
+            _s["aged_cats_on"] = True
+            _s["aged_cats_seeded"] = True
+    # USD→INR rate badla (jaise 88 → 100)? to purane prices TURANT recalc
+    # warna buyer ko purani (sasti) price par number mil jayega aur nuksan hoga.
+    _rate = float(tg_cfg().get("usd_inr") or 0)
+    if _rate and abs(float(db["tgshark"].get("usd_inr", 0) or 0) - _rate) > 0.001:
+        db["tgshark"]["usd_inr"] = _rate
+        changed = True
+        try:
+            await recalc_all_prices(reason="usd_inr")
+            logging.info("USD→INR rate changed to %s — prices recalculated.", _rate)
+            await log_event(f"💱 <b>Rate updated</b> — 1$ = ₹{_rate:g} — "
+                            f"saare prices dobara calculate ho gaye.")
+        except Exception as _e:
+            logging.warning("Rate recalc failed: %s", _e)
     if not api_key_ok():
         logging.warning("⚠️  Supplier API key set nahi hai (.env me TGSHARK_API_KEY) — "
                         "stock sync tab tak nahi hoga.")

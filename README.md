@@ -25,6 +25,13 @@ tools/           ← static checker
   `LK 2020`, `XX` mix), sab khud-ba-khud dikh jate hain — **+15% aged premium** ke saath.
   Live example: `🕰 Aged Mix (Old Accounts)` ₹55 (44 numbers, cost ₹39.6 → profit ₹15).
   Aged pool khali → server par “currently out of stock”, stale entries apne aap delete.
+
+  **Aged category tiles** (`/agedcat`) — supplier ka API aged pool ko ek hi bucket me deta hai
+  (XX · 44 numbers), isliye Server 2 par admin ke tiles usi asli pool se kharidte hain:
+  `/agedcat preset` se 12 tiles (INDIA 2023 ₹55 … SRILANKA 2021 ₹230), `/agedcat add 75 INDIA 2021`,
+  `/agedcat price 2 120`, `/agedcat del 3`, `/agedcat clear`, `/agedcat on|off`.
+  Stock sabka shared hai (ek bikne par sabke count ghate hain) aur note me likha hai —
+  kisi specific country/year ki guarantee nahi.
   Mapping badlo: `/settgserver s2 2`
 - **Aged server me zyada profit** — Server 2 par auto **+25% premium margin**
   (`AGED_UPLIFT_PCT`), badlo: `/setservermargin s2 40%` / `s2 +30` / `s2 off`
@@ -265,3 +272,15 @@ public repo me chala gaya ho to BotFather se **revoke** kar lena.
 ## 📄 License
 
 MIT — `LICENSE` file dekho.
+
+## Loss-proof selling (kabhi nuksan na ho) — v6.3.9
+  • `TGSHARK_USD_INR=100.0` — 1$ = ₹100 (rate badalte hi saare prices apne aap recalc).
+  • `TGSHARK_MIN_PROFIT=5.0` — har sale me kam se kam ₹5 profit pakka (cost ke upar).
+  • `TGSHARK_LOSS_GUARD=true` —
+      – sale se PEHLE: price < cost → sale block (“rates update ho rahe hain”).
+      – sale ke BAAD: supplier ne jitna charge kiya wo mili price se zyada →
+        us country ka stock FREEZE + GC aur admins ko turant alert.
+  • Commands: `/setminprofit 5` • `/lossguard on|off` • `/agedcat list` • `/setinr 100`.
+  • Bug fixes: `.env` inline comments (`15  # comment`) ab theek se padhe jate hain —
+    pehle aisi lines ignore ho kar default value use hoti thi. OTP-timeout refund ab
+    theek server me stock wapas karta hai (s2 ki jagah s1 nahi).

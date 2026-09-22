@@ -203,8 +203,8 @@ async def handle_dep_admin(query, data, uid):
             await app.send_message(
                 dep["uid"],
                 "🚫 <b>You are banned</b>\n━━━━━━━━━━━━━━━━━━\n"
-                "Aapka account is store se banned kar diya gaya hai.\n\n"
-                "Agar ye galti se hua hai to support se contact karein.",
+                "Your account has been banned from this store.\n\n"
+                "If you think this was a mistake, please contact support.",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("📞 Contact Support", url=support_url())]]))
         except Exception:
@@ -213,7 +213,7 @@ async def handle_dep_admin(query, data, uid):
                         f"👤 <code>{dep['uid']}</code> • Ref <code>{ref}</code> • by {esc(admin_name)}")
         await query.message.edit_text(
             f"🚫 <b>Banned</b> — <code>{dep['uid']}</code>\n"
-            f"Deposit <code>{ref}</code> reject kar diya gaya.\n"
+            f"Deposit <code>{ref}</code> has been rejected.\n"
             f"Unban: <code>/unban {dep['uid']}</code>")
         return
 

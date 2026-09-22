@@ -581,3 +581,103 @@ async def cmd_setstockview(client, message):
     name = {"exact": "exact count (34)", "range": "range (10-49)",
             "hidden": "sirf 'in stock'"}[val]
     await message.reply_text(f"{E('check')} Stock display: <b>{name}</b>")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/agedcat(?:\s+(\S+))?(?:\s+(.*))?\s*$"))
+@admin_only
+async def cmd_agedcat(client, message):
+    """Aged pool ke category tiles: /agedcat list | preset | add 75 INDIA 2021 |
+    price 2 120 | del 3 | clear | on | off"""
+    what = (message.matches[0].group(1) or "list").strip().lower()
+    rest = (message.matches[0].group(2) or "").strip()
+    code = "s2" if "s2" in db.get("servers", {}) else next(
+        (c for c, s in db.get("servers", {}).items() if int(s.get("tg_server") or 0) >= 2), "s2")
+    srv = db["servers"].get(code)
+    if not srv:
+        return await message.reply_text("❌ Aged server nahi mila.")
+    srv.setdefault("aged_cats", [])
+    if what in ("list", ""):
+        if not srv["aged_cats"]:
+            return await message.reply_text(
+                f"🕰 <b>Aged category tiles</b> — abhi koi nahi hai.\n\n"
+                f"<code>/agedcat preset</code> — supplier ke asli aged list se bhar do\n"
+                f"<code>/agedcat add 75 INDIA 2021</code> — khud se ek tile add karo")
+        lines = "\n".join(
+            f"{i}. {esc(c.get('label'))} — <b>₹{c.get('price') or 'auto'}</b> "
+            f"{'✅' if c.get('on', True) else '⏸'}"
+            for i, c in enumerate(srv["aged_cats"], 1))
+        return await message.reply_text(
+            f"🕰 <b>Aged category tiles</b> ({esc(srv.get('name', code))})\n{lines}\n\n"
+            f"<i>Sab ek hi real aged pool se kharidte hain — stock shared hai.</i>\n"
+            f"<code>/agedcat add 75 INDIA 2021</code> • <code>/agedcat del 3</code> • "
+            f"<code>/agedcat clear</code>")
+    if what == "preset":
+        srv["aged_cats"] = [{"label": lb, "cost": usd, "price": 0, "on": True}
+                            for lb, usd in AGED_CAT_PRESETS]
+        srv["aged_cats_on"] = True
+    elif what == "add":
+        parts = rest.split(None, 1)
+        if len(parts) < 2 or not parts[0].isdigit():
+            return await message.reply_text("❌ Format: <code>/agedcat add 75 INDIA 2021</code>")
+        srv["aged_cats"].append({"label": parts[1].strip(), "price": int(parts[0]), "on": True})
+        srv["aged_cats_on"] = True
+    elif what == "price":
+        parts = rest.split()
+        if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+            return await message.reply_text("❌ Format: <code>/agedcat price 2 120</code>")
+        n, val = int(parts[0]) - 1, int(parts[1])
+        if not (0 <= n < len(srv["aged_cats"])):
+            return await message.reply_text("❌ Galat number — <code>/agedcat list</code> dekho.")
+        srv["aged_cats"][n]["price"] = val
+    elif what == "del":
+        if not rest.isdigit() or not (1 <= int(rest) <= len(srv["aged_cats"])):
+            return await message.reply_text("❌ Format: <code>/agedcat del 3</code>")
+        srv["aged_cats"].pop(int(rest) - 1)
+    elif what == "clear":
+        srv["aged_cats"] = []
+    elif what in ("on", "off"):
+        srv["aged_cats_on"] = (what == "on")
+    else:
+        return await message.reply_text("❌ <code>/agedcat list | preset | add | price | del | "
+                                        "clear | on | off</code>")
+    await save_db()
+    n, msg = await tg_sync_stock(code)          # tiles turant ban jayein
+    tiles = len([k for k in srv["countries"] if str(k).startswith("CAT:")])
+    await message.reply_text(
+        f"{E('check')} <b>Aged categories updated</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🕰 Tiles on server: <b>{tiles}</b>\n"
+        f"📦 {msg}")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/setminprofit\s+(\d+(?:\.\d+)?)\s*$"))
+@admin_only
+async def cmd_setminprofit(client, message):
+    """Har sale me kam se kam itna ₹ profit pakka: /setminprofit 5"""
+    val = float(message.matches[0].group(1))
+    db.setdefault("tgshark", {})["min_profit"] = val
+    await save_db()
+    await recalc_all_prices(reason="min_profit")
+    await message.reply_text(
+        f"{E('check')} <b>Minimum profit</b> = <b>₹{val:g}</b> har sale par\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Ab koi bhi number (asli cost + ₹{val:g}) se kam par nahi bikega.\n"
+        f"Saare prices dobara calculate ho gaye.")
+
+
+@app.on_message(filters.private & filters.regex(r"(?i)^/lossguard\s*(on|off)?\s*$"))
+@admin_only
+async def cmd_lossguard(client, message):
+    """Loss guard on/off: kharcha zyada ho to stock freeze + alert  |  /lossguard on"""
+    arg = (message.matches[0].group(1) or "").strip().lower()
+    if arg in ("on", "off"):
+        db.setdefault("tgshark", {})["loss_guard"] = (arg == "on")
+        await save_db()
+    on = loss_guard_on()
+    await message.reply_text(
+        f"{E('shield')} <b>Loss guard</b>: {'<b>ON</b> ✅' if on else '<b>OFF</b> ⚠️'}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"• Sale se pehle: price < cost → sale block\n"
+        f"• Sale ke baad: asli kharcha zyada → us country ka stock freeze + alert\n"
+        f"• Min profit floor: ₹{min_profit_inr():g} per sale\n\n"
+        f"<code>/lossguard on|off</code> • <code>/setminprofit 5</code>")

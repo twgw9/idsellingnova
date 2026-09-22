@@ -96,6 +96,7 @@ ADMIN_COMMANDS = USER_COMMANDS + [
     BotCommand("setemoji", "/setemoji crown <id>"),
     BotCommand("emojis", "Premium emoji list"),
     # ---- servers / stock ----
+    BotCommand("agedcat", "Aged category tiles (/agedcat list)"),
     BotCommand("addserver", "Create a new server"),
     BotCommand("renameserver", "/renameserver s1 NewName"),
     BotCommand("delserver", "Delete a server"),

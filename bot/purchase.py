@@ -92,12 +92,11 @@ async def api_otp_watcher(sale_id, uid, delay=0):
             rec["balance"] = rec.get("balance", 0) + price
             rec["spent"] = max(0, int(rec.get("spent", 0)) - price)
             rec["purchases"] = max(0, int(rec.get("purchases", 0)) - 1)
-            iso = sd.get("iso")
-            acode = api_server_code()
+            ckey = sd.get("ckey") or sd.get("iso")
+            acode = sd.get("code") or api_server_code()
             asrv = get_server(acode)
-            if asrv and iso in asrv["countries"]:
-                asrv["countries"][iso]["api_count"] = \
-                    int(asrv["countries"][iso].get("api_count", 0)) + 1
+            if asrv and ckey in asrv["countries"]:
+                bump_shared_stock(asrv, asrv["countries"][ckey], +1)
             db["sold_sessions"].pop(sale_id, None)
             db["sales"] = [x for x in db.get("sales", []) if x["sale_id"] != sale_id]
             await save_db()
@@ -115,7 +114,7 @@ async def api_otp_watcher(sale_id, uid, delay=0):
         for a in dict.fromkeys(list(db.get("admins", [])) + OWNER_IDS):
             try:
                 await safe_send(a, f"{E('warn')} <b>Auto-refund</b> — <code>{sale_id}</code> "
-                                   f"(OTP timeout) ₹{price} buyer ko wapas.")
+                                   f"(OTP timeout) ₹{price} refunded to the buyer.")
             except Exception:
                 pass
         return
@@ -178,14 +177,22 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
                              f"Please use the 💳 Deposit button to add funds, then try again.",
                              show_alert=True)
         api_item = bool(item.get("api"))
+        # ---- LOSS GUARD (pehle): rate badal gaya aur price cost se kam ho gayi? → rook do
+        if api_item and loss_guard_on():
+            _cost = float(cobj.get("api_cost", 0) or 0) * float(tg_cfg()["usd_inr"] or 0)
+            if _cost > 0 and price <= _cost:
+                return await ack(query, "⚠️ Rates update ho rahe hain — "
+                                        "10 second baad dobara try karein.", show_alert=True)
         rec["balance"] = bal - price
         rec["spent"] = rec.get("spent", 0) + price
         rec["purchases"] = rec.get("purchases", 0) + 1
         sale_id = gen_sale_id()
         if api_item:
-            cobj["api_count"] = max(0, int(cobj.get("api_count", 1)) - 1)
+            bump_shared_stock(srv, cobj, -1)
             db["sold_sessions"][sale_id] = {
                 "api": True,
+                "code": code,                     # kaunsa server (refund theek jagah ho)
+                "ckey": name,                     # kaunsi country/tile
                 "iso": cobj.get("iso", name),
                 "country": cname(srv, name),
                 "label": item.get("label", cname(srv, name)),
@@ -213,7 +220,7 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
                 "sold_at": time.time(),
                 "otp_after": time.time(),
             }
-        db["sales"].append({"sale_id": sale_id, "uid": uid, "server": srv["name"],
+        db["sales"].append({"sale_id": sale_id, "uid": uid, "code": code, "server": srv["name"],
                             "country": cname(srv, name),
                             "label": item.get("label", cname(srv, name)),
                             "price": price, "number": item["number"], "time": now_str(),
@@ -238,7 +245,7 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
                 r["balance"] = r.get("balance", 0) + price
                 r["spent"] = max(0, r.get("spent", 0) - price)
                 r["purchases"] = max(0, r.get("purchases", 0) - 1)
-                cobj["api_count"] = int(cobj.get("api_count", 0)) + 1
+                bump_shared_stock(srv, cobj, +1)
                 db["sales"] = [s for s in db["sales"] if s["sale_id"] != sale_id]
                 db["sold_sessions"].pop(sale_id, None)
                 await save_db()
@@ -276,6 +283,8 @@ async def do_purchase(query, code, cidx, page, discount=0.0, quiet=False):
                 if s["sale_id"] == sale_id:
                     s["number"] = bought["phone"]
             await save_db()
+        # ---- LOSS GUARD (baad): asli kharcha zyada nikla → freeze + alert
+        await loss_guard_check(srv, code, name, cobj, price, bought, sale_id, uid)
         dry = bought.get("dry")
         text = (
             f"{E('check')} <b>PURCHASE COMPLETE!</b>\n"

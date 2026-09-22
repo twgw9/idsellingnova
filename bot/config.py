@@ -25,7 +25,13 @@ def _load_dotenv(paths=None):
                         continue
                     key, val = line.split("=", 1)
                     key = key.strip()
-                    val = val.strip().strip('"').strip("'")
+                    raw = val.strip()
+                    quoted = raw[:1] in ("\"", "'")
+                    val = raw.strip('"').strip("'")
+                    if not quoted:                 # 15   # comment  → 15
+                        for sep in (" #", "\t#"):
+                            if sep in val:
+                                val = val.split(sep, 1)[0].strip()
                     os.environ.setdefault(key, val)
         except Exception:
             pass
@@ -120,15 +126,32 @@ LOG_GROUP = env("LOG_GROUP", "")
 AGED_UPLIFT_PCT = env_float("AGED_UPLIFT_PCT", 15.0)
 # Country list me ek page par kitne countries (zyada = kam pages)
 COUNTRIES_PER_PAGE = env_int("COUNTRIES_PER_PAGE", 20)
+# Aged pool ke category tiles ke liye default (label, supplier USD cost)
+# — supplier ke apne aged list se liya hua; admin /agedcat se badal sakta hai
+AGED_CAT_PRESETS = [
+    ("🇮🇳 INDIA 2023", 0.40),
+    ("🇮🇳 INDIA 2022", 0.80),
+    ("🇮🇳 INDIA 2021", 1.00),
+    ("🇮🇳 INDIA 2020", 1.50),
+    ("🇱🇰 SRILANKA 2020", 1.30),
+    ("🇱🇰 SRILANKA 2021", 2.10),
+    ("🇧🇷 BRAZIL 2024", 0.70),
+    ("🇧🇷 BRAZIL 2023", 0.85),
+    ("🇧🇷 BRAZIL 2022", 1.10),
+    ("🇧🇷 BRAZIL 2021", 1.50),
+    ("🇫🇷 FRANCE 2021", 2.10),
+    ("🇲🇾 MALAYSIA 2021", 1.50),
+]
 # Global Mix (XX) ke liye disclaimer
 AGED_MIX_NOTE = env(
     "AGED_MIX_NOTE",
-    "🕰 Aged / old accounts ka random pool — number kisi bhi purane batch se mil sakta hai. "
-    "Kisi specific country ya saal ki guarantee nahi.")
+    "🕰 Random pool of aged / old accounts — the number can come from any older batch. "
+    "No guarantee for a specific country or year.")
 GLOBAL_MIX_NOTE = env(
     "GLOBAL_MIX_NOTE",
-    "🎲 Random country — isme koi bhi desh ka number mil sakta hai. "
-    "Kisi specific country ya quality ki guarantee nahi, iski responsibility hamari nahi hai.")
+    "🎲 Random country — you can receive a number from any country in this pool. "
+    "There is no guarantee for a specific country or quality, "
+    "and we do not take responsibility for it.")
 
 # remote shutdown (/shutdown command) — main.py is event ka intezaar karta hai
 _STOP = {"event": None, "loop": None}
@@ -154,7 +177,7 @@ def request_shutdown():
 
 
 TGSHARK_PROFIT_PCT = env_float("TGSHARK_PROFIT_PCT", 10.0)   # fallback flat %
-TGSHARK_USD_INR = env_float("TGSHARK_USD_INR", 88.0)         # 1 USD = ₹88
+TGSHARK_USD_INR = env_float("TGSHARK_USD_INR", 100.0)        # 1 USD = ₹100
 TGSHARK_ROUND_TO = env_int("TGSHARK_ROUND_TO", 5)            # round-up ₹5
 TGSHARK_DRY_RUN = env_bool("TGSHARK_DRY_RUN", False)         # True = demo (no spend)
 TGSHARK_OTP_TIMEOUT = env_int("TGSHARK_OTP_TIMEOUT", 900)    # seconds (fallback)
@@ -176,6 +199,10 @@ TGSHARK_LOW_STOCK = env_int("TGSHARK_LOW_STOCK", 5)          # low-stock alert
 # Profit engine v2
 TGSHARK_PROFIT_MODE = env("TGSHARK_PROFIT_MODE", "tiers")    # tiers | pct
 TGSHARK_ROUND_MODE = env("TGSHARK_ROUND_MODE", "ceil")       # ceil | nearest | floor
+# Har sale me kam se kam itna ₹ PROFIT pakka (asli cost ke upar) — 0 = band
+TGSHARK_MIN_PROFIT = env_float("TGSHARK_MIN_PROFIT", 0.0)
+# Asli kharcha mili price se zyada nikle to us country ka stock FREEZE + admin alert
+TGSHARK_LOSS_GUARD = env_bool("TGSHARK_LOSS_GUARD", True)
 TGSHARK_MAX_PRICE = env_int("TGSHARK_MAX_PRICE", 0)          # 0 = no cap
 TGSHARK_CHARM = env_bool("TGSHARK_CHARM", False)             # ₹49 / ₹99 pricing
 
